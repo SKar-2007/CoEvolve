@@ -18,7 +18,9 @@ class Base(DeclarativeBase):
 
 _engine = None
 _session_factory = None
-_engine_lock = threading.Lock()
+# RLock: get_session_factory() holds this while calling get_engine(), which
+# acquires it again when the engine is not yet built.
+_engine_lock = threading.RLock()
 
 
 def _build_url(raw_url: str) -> str:
