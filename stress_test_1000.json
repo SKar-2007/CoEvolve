@@ -1,0 +1,92 @@
+{
+  "summary": {
+    "episodes": 1000,
+    "total_time_s": 0.45,
+    "avg_episode_time_s": 0.0,
+    "episodes_per_second": 2203.51
+  },
+  "outcomes": {
+    "secure": 1000,
+    "exploitable": 0,
+    "errors": 0,
+    "secure_rate": 1.0
+  },
+  "elo": {
+    "initial_attacker": 1500.0,
+    "initial_developer": 1500.0,
+    "final_attacker": 1000.0,
+    "final_developer": 2012.8,
+    "attacker_delta": -500.0,
+    "developer_delta": 512.8,
+    "history": [
+      {
+        "attacker": 1000.0,
+        "developer": 2011.92225885416
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.016461684805
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.1106135957111
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.2047146418224
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.298764877994
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.392764358993
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.4867131394974
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.5806112740977
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.6744588172955
+      },
+      {
+        "attacker": 1000.0,
+        "developer": 2012.7682558235056
+      }
+    ]
+  },
+  "difficulty": {
+    "avg_tier": 1.1,
+    "tier_distribution": {
+      "1": 970,
+      "2": 13,
+      "3": 8,
+      "4": 5,
+      "5": 4
+    }
+  },
+  "rules": {
+    "total_distilled": 0,
+    "acceptance_rate": 0
+  },
+  "tokens": {
+    "total_prompt_tokens": 240000,
+    "total_completion_tokens": 360000,
+    "total_tokens": 600000,
+    "total_calls": 2000,
+    "total_cost_usd": 1.32,
+    "by_provider": {
+      "mock": {
+        "prompt_tokens": 240000,
+        "completion_tokens": 360000,
+        "cost_usd": 1.3200000000000423
+      }
+    }
+  }
+}
