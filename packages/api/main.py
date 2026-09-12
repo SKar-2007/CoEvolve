@@ -141,7 +141,7 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -189,7 +189,7 @@ def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
 # ---------------------------------------------------------------------------
 @app.get("/rules", response_model=list[RuleRead])
 def list_rules(
-    vuln_class: Optional[str] = Query(None),
+    vuln_class: str | None = Query(None),
     approved_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -290,7 +290,7 @@ def get_vulnerability_coverage(db: Session = Depends(get_db)) -> list[Vulnerabil
 def stop_episode(
     episode_id: str,
     db: Session = Depends(get_db),
-    _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> EpisodeStopResponse:
     ep = db.get(EpisodeRecord, episode_id)
     if not ep:
@@ -321,7 +321,7 @@ def stop_episode(
 def run_training_episode(
     body: TrainingRunRequest,
     db: Session = Depends(get_db),
-    _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> TrainingRunResponse:
     """Execute one co-evolutionary training episode (blocks until done)."""
     from ..agents.llm import build_client
@@ -367,7 +367,7 @@ def run_training_episode(
     )
 
 
-def _job_to_read(job: TrainingJob, queue_position: Optional[int] = None) -> TrainingJobRead:
+def _job_to_read(job: TrainingJob, queue_position: int | None = None) -> TrainingJobRead:
     return TrainingJobRead(
         job_id=job.job_id,
         status=job.status.value,
@@ -394,7 +394,7 @@ def _job_to_read(job: TrainingJob, queue_position: Optional[int] = None) -> Trai
 @app.post("/training/jobs", response_model=TrainingJobRead, status_code=202)
 def enqueue_training_job(
     body: TrainingJobEnqueueRequest,
-    _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> TrainingJobRead:
     """Enqueue a training episode and return immediately (202 Accepted)."""
     queue = get_task_queue()
@@ -434,7 +434,7 @@ def get_training_job(job_id: str) -> TrainingJobRead:
 async def training_stream(
     vulnerability_class: str = "SQLi",
     language: str = "python",
-    _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ):
     """Stream training progress via Server-Sent Events.
 

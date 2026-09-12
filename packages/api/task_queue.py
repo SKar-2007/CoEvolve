@@ -37,8 +37,8 @@ class TrainingJob:
     max_retries: int = 3
     use_react: bool = False
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     result: dict[str, Any] = field(default_factory=dict)
     error: str = ""
 
@@ -64,7 +64,7 @@ class TaskQueue:
     # Terminal job keys expire so Redis does not grow without bound.
     RESULT_TTL_SECONDS = 7 * 24 * 3600
 
-    def __init__(self, redis_url: Optional[str] = None) -> None:
+    def __init__(self, redis_url: str | None = None) -> None:
         self._redis: Any = None
         self._memory_queue: list[TrainingJob] = []
         self._memory_results: dict[str, TrainingJob] = {}
@@ -201,7 +201,7 @@ class TaskQueue:
 # Shared singleton — one queue per process, built from settings
 # ---------------------------------------------------------------------------
 
-_queue: Optional[TaskQueue] = None
+_queue: TaskQueue | None = None
 _queue_lock = threading.Lock()
 
 

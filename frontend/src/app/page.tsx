@@ -197,6 +197,158 @@ function Field({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return iso;
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function fmtDur(sec: number | null | undefined): string {
+  if (sec === null || sec === undefined) return "—";
+  if (sec < 60) return `${sec.toFixed(1)}s`;
+  return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
+}
+
+function fmtTs(epochSec: number | null | undefined): string {
+  if (!epochSec) return "—";
+  return new Date(epochSec * 1000).toLocaleString();
+}
+
+interface SastFinding {
+  rule_id: string;
+  file: string;
+  line: number;
+  severity: string;
+  confidence: string;
+  message: string;
+}
+
+interface Verdict {
+  j?: number;
+  trace_id?: string;
+  episode_k?: number | null;
+  structure?: string;
+  sast?: { rules_matched?: SastFinding[]; total_matches?: number };
+  dast?: {
+    exploit_class?: string;
+    payload?: string;
+    success?: boolean;
+    stdout?: string;
+    stderr?: string;
+    execution_time_ms?: number;
+    evidence?: string[];
+  };
+  error?: string;
+}
+
+function VerdictTable({ verdict }: { verdict: Verdict }) {
+  const findings = verdict.sast?.rules_matched ?? [];
+  const dast = verdict.dast && Object.keys(verdict.dast).length > 0 ? verdict.dast : null;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+        {verdict.j === 0 ? (
+          <Badge label="SECURE" color="#4caf5030" />
+        ) : verdict.j === 1 ? (
+          <Badge label="VULNERABLE" color="#ff545130" />
+        ) : (
+          <Badge label="UNKNOWN" color="#8888a030" />
+        )}
+        {verdict.trace_id && (
+          <code style={{ fontSize: 11, color: "var(--text-dim)" }}>trace {verdict.trace_id.slice(0, 8)}</code>
+        )}
+        {verdict.episode_k !== null && verdict.episode_k !== undefined && (
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>episode_k={verdict.episode_k}</span>
+        )}
+      </div>
+      {verdict.structure && (
+        <p style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>{verdict.structure}</p>
+      )}
+      {verdict.error && (
+        <p style={{ fontSize: 12, color: "var(--accent)", marginBottom: 8 }}>Judge error: {verdict.error}</p>
+      )}
+      <div style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px" }}>
+        SAST — {verdict.sast?.total_matches ?? findings.length} match(es)
+      </div>
+      {findings.length === 0 ? (
+        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>Clean — no patterns matched.</p>
+      ) : (
+        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", marginBottom: 8 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-dim)" }}>
+              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Rule</th>
+              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Severity</th>
+              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Location</th>
+              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid var(--border)", verticalAlign: "top" }}>
+                <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>{f.rule_id}</td>
+                <td style={{ padding: "6px 4px" }}>{f.severity}</td>
+                <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>
+                  {f.file}:{f.line}
+                </td>
+                <td style={{ padding: "6px 4px" }}>{f.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px" }}>DAST replay</div>
+      {!dast ? (
+        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          Not run — SAST was clean or the replay was inconclusive.
+        </p>
+      ) : (
+        <>
+          <Field k="Exploit class" v={<code style={{ fontSize: 12 }}>{dast.exploit_class}</code>} />
+          <Field
+            k="Result"
+            v={
+              dast.success ? (
+                <Badge label="EXPLOITED" color="#ff545130" />
+              ) : (
+                <Badge label="BLOCKED" color="#4caf5030" />
+              )
+            }
+          />
+          {dast.execution_time_ms !== undefined && <Field k="Replay time" v={fmtDur(dast.execution_time_ms / 1000)} />}
+          {dast.payload && (
+            <>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Payload</div>
+              <Pre text={dast.payload} />
+            </>
+          )}
+          {dast.evidence && dast.evidence.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Evidence</div>
+              {dast.evidence.map((e, i) => (
+                <p key={i} style={{ fontSize: 12, marginBottom: 2 }}>
+                  • {e}
+                </p>
+              ))}
+            </>
+          )}
+          {dast.stdout && (
+            <>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Stdout</div>
+              <Pre text={dast.stdout} />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function BarChart({
   data,
   maxVal,
@@ -609,7 +761,16 @@ export default function Dashboard() {
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Rating Gap</span>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>
-                      {Math.round(eloR!.developer - eloR!.attacker)} pts (Dev lead)
+                      {(() => {
+                        const gap = Math.round(eloR!.developer - eloR!.attacker);
+                        const leader = gap >= 0 ? "Dev lead" : "Attacker lead";
+                        return (
+                          <span style={{ color: gap >= 0 ? "var(--green)" : "var(--accent)" }}>
+                            {gap >= 0 ? "+" : ""}
+                            {gap} pts ({leader})
+                          </span>
+                        );
+                      })()}
                     </span>
                   </div>
                 </div>
@@ -841,7 +1002,9 @@ export default function Dashboard() {
                       <Badge label={ep.vulnerability_class || "—"} color="#8888a030" />
                       <span style={{ fontSize: 12, color: "var(--text-dim)" }}>T{ep.difficulty_tier ?? "?"}</span>
                       <span style={{ fontSize: 12, fontFamily: "monospace" }}>{ep.episode_id}</span>
-                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{fmtDate(ep.created_at)}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }} title={fmtDate(ep.created_at)}>
+                        {timeAgo(ep.created_at)}
+                      </span>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -859,7 +1022,11 @@ export default function Dashboard() {
                       <div style={{ fontSize: 13, color: "var(--text-dim)", margin: "8px 0 4px" }}>Patch</div>
                       <Pre text={ep.patch_text || "(empty)"} />
                       <div style={{ fontSize: 13, color: "var(--text-dim)", margin: "8px 0 4px" }}>Judge verdict</div>
-                      <Pre text={ep.judge_verdict ? JSON.stringify(ep.judge_verdict, null, 2) : "(none)"} />
+                      {ep.judge_verdict ? (
+                        <VerdictTable verdict={ep.judge_verdict as Verdict} />
+                      ) : (
+                        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>(none recorded)</p>
+                      )}
                       {ep.status !== "completed" && ep.status !== "failed" && (
                         <button
                           onClick={() => stopEpisode(ep.episode_id)}
@@ -1065,7 +1232,14 @@ export default function Dashboard() {
                       />
                     </div>
                     <Field k="Class / lang" v={`${j.vulnerability_class} / ${j.language}${j.use_react ? " (ReAct)" : ""}`} />
+                    <Field k="Enqueued" v={fmtTs(j.created_at)} />
                     {j.queue_position !== null && j.status === "pending" && <Field k="Queue position" v={j.queue_position} />}
+                    {j.started_at && (
+                      <Field
+                        k="Wait / run time"
+                        v={`${fmtDur(j.started_at - j.created_at)} wait${j.completed_at ? ` / ${fmtDur(j.completed_at - j.started_at)} run` : ""}`}
+                      />
+                    )}
                     {j.error && <Field k="Error" v={<span style={{ color: "var(--accent)" }}>{j.error}</span>} />}
                     {Object.keys(j.result).length > 0 && (
                       <Pre text={JSON.stringify(j.result, null, 2)} />
@@ -1100,7 +1274,14 @@ export default function Dashboard() {
                     <td style={{ padding: "8px 4px" }}>{c.total_episodes}</td>
                     <td style={{ padding: "8px 4px" }}>{c.detected_count}</td>
                     <td style={{ padding: "8px 4px" }}>{c.secure_count}</td>
-                    <td style={{ padding: "8px 4px", fontWeight: 600 }}>{(c.coverage_rate * 100).toFixed(0)}%</td>
+                    <td style={{ padding: "8px 4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 60, height: 8, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${c.coverage_rate * 100}%`, background: c.coverage_rate >= 0.7 ? "var(--green)" : "var(--accent)", borderRadius: 4 }} />
+                        </div>
+                        <span style={{ fontWeight: 600 }}>{(c.coverage_rate * 100).toFixed(0)}%</span>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

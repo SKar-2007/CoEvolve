@@ -455,7 +455,7 @@ class RedisRateLimiter:
             _alert_limiter_outage()
             return True, fallback
 
-    def reset(self, identifier: Optional[str] = None) -> None:
+    def reset(self, identifier: str | None = None) -> None:
         """Clear windows (all, or one identifier). Used by tests/ops."""
         try:
             if identifier is not None:
@@ -522,8 +522,8 @@ def reset_rate_limiter() -> None:
 
 async def get_api_key(
     request: Request,
-    api_key_header: Optional[str] = Security(API_KEY_HEADER),
-    api_key_query: Optional[str] = Security(API_KEY_QUERY),
+    api_key_header: str | None = Security(API_KEY_HEADER),
+    api_key_query: str | None = Security(API_KEY_QUERY),
 ) -> APIKey | None:
     """Extract and validate API key from header or query param.
 
@@ -542,7 +542,7 @@ async def get_api_key(
 
 async def require_api_key(
     request: Request,
-    api_key: Optional[APIKey] = Security(get_api_key),
+    api_key: APIKey | None = Security(get_api_key),
 ) -> APIKey:
     """Require a valid API key. Raises 401 if missing or invalid."""
     if api_key is None:
@@ -552,7 +552,7 @@ async def require_api_key(
 
 async def require_api_key_if_enabled(
     request: Request,
-    api_key: Optional[APIKey] = Security(get_api_key),
+    api_key: APIKey | None = Security(get_api_key),
 ) -> APIKey | None:
     """Enforce API-key auth only when REQUIRE_AUTH=true.
 
@@ -573,7 +573,7 @@ async def require_api_key_if_enabled(
 
 async def check_rate_limit(
     request: Request,
-    api_key: Optional[APIKey] = Security(get_api_key),
+    api_key: APIKey | None = Security(get_api_key),
 ) -> None:
     """Check rate limits. Uses key hash or client IP as identifier."""
     limiter = get_rate_limiter()

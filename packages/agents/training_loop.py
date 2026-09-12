@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .attacker.generator import AttackerAgent, GeneratedTask
+from .attacker.generator import AttackerAgent, ContextFile, GeneratedTask
 from .developer.executor import DeveloperAgent
 from .developer.tools import ReActDeveloperAgent
 from .distiller.pipeline import DistilledRule, DistillerAgent
@@ -150,7 +150,16 @@ class TrainingLoop:
         use_react: bool = False,
         workspace_dir: str | Path = "/tmp/coevolve_workspace",
         reporter: StepReporter | None = None,
+        small_llm: LLMClient | None = None,
     ) -> None:
+        """Create the loop.
+
+        Args:
+            llm: primary client (attacker + developer).
+            small_llm: optional cheaper client for the constrained distillation
+                step (falls back to ``llm``). Enables cost tuning per role,
+                e.g. ``ModelConfig.small_model``, without changing behavior.
+        """
         self.llm = llm
         self.reporter = reporter
 
@@ -159,8 +168,14 @@ class TrainingLoop:
             from .llm import ReportingLLMClient
 
             reporting_llm: LLMClient = ReportingLLMClient(llm, callback=self._make_llm_callback())
+            reporting_small: LLMClient = (
+                ReportingLLMClient(small_llm, callback=self._make_llm_callback())
+                if small_llm is not None
+                else reporting_llm
+            )
         else:
             reporting_llm = llm
+            reporting_small = small_llm if small_llm is not None else llm
         self.attacker = AttackerAgent(reporting_llm)
 
         if use_react:
@@ -173,7 +188,7 @@ class TrainingLoop:
         else:
             self.developer = DeveloperAgent(reporting_llm)
 
-        self.distiller = DistillerAgent(reporting_llm)
+        self.distiller = DistillerAgent(reporting_small)
 
         # Pluggable dependencies — import lazily to avoid circular imports
         if judge is not None:
@@ -302,6 +317,8 @@ class TrainingLoop:
             workspace_path = Path(workspace_dir)
             workspace_path.mkdir(parents=True, exist_ok=True)
             for cf in task.context_files:
+                if not isinstance(cf, ContextFile):
+                    continue
                 cf_path = workspace_path / cf.path
                 cf_path.parent.mkdir(parents=True, exist_ok=True)
                 cf_path.write_text(cf.snippet, encoding="utf-8")
@@ -324,6 +341,7 @@ class TrainingLoop:
 
             # Clean up workspace after evaluation
             import shutil
+
             if workspace_path.exists():
                 shutil.rmtree(workspace_path, ignore_errors=True)
 

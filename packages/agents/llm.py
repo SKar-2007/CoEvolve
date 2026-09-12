@@ -153,7 +153,7 @@ class ModelscopeClient(OpenAIClient):
         super().__init__(model=model, api_key=api_key or os.getenv("MODELSCOPE_API_KEY"))
         if not self._api_key:
             raise LLMError("MODELSCOPE_API_KEY not set")
-        self._base_url = "https://api-inference.modelscope.cn/v1"
+        self._base_url = "https://api-inference.modelscope.ai/v1"
 
     def generate(self, system, user, temperature=0.7, max_tokens=4096):
         try:
@@ -165,6 +165,7 @@ class ModelscopeClient(OpenAIClient):
             model=self.model,
             temperature=temperature,
             max_tokens=max_tokens,
+            extra_body={"enable_thinking": False},
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},

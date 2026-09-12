@@ -19,6 +19,12 @@ Given a confirmed vulnerability failure trace, produce a concise imperative rule
 3. IS SELF-CONTAINED: understandable without other rules or the trace.
 4. IS CONCISE: under 100 words.
 5. IS IMPERATIVE: start with ALWAYS or NEVER.
+6. STATES ITS SCOPE: cover helper/secondary code paths explicitly (most escapes hide
+   there), and add one short "except"/"does not apply when" clause so the rule does
+   not overfit to the single trace (e.g. "except for static allowlisted constants").
+7. NAMES THE VULNERABILITY CLASS precisely in vulnerability_class using one of:
+   SQLi, PathTraversal, CommandInjection, XSS, SSRF, Deserialization, SSTI, XXE,
+   OpenRedirect, PrototypePollution.
 
 Return ONLY a JSON object with keys:
 - rule_text: the imperative rule

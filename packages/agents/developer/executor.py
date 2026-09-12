@@ -25,13 +25,27 @@ CODE QUALITY REQUIREMENTS:
 - Follow the principle of least privilege.
 - Never trust external input.
 
-SECURITY REQUIREMENTS:
+SECURITY REQUIREMENTS (apply to every file you touch, not just the entry point):
 - Sanitize all user inputs before use.
-- Use parameterized queries for database operations.
-- Validate file paths to prevent traversal attacks.
-- Escape output to prevent XSS vulnerabilities.
-- Validate URLs before making external requests.
-- Never deserialize untrusted data without validation.
+- SQLi: use parameterized queries or an ORM for ALL database operations, including
+  helpers, loggers, and background jobs. Never format, concatenate, or %-interpolate
+  values into SQL — including strings that look like placeholders ("%s" inside an
+  f-string is still injection). Treat validated input as untrusted downstream.
+- PathTraversal: resolve file paths against an allowlisted base directory
+  (os.path.realpath + commonpath check) and reject symlinks escaping it.
+- XSS: apply context-aware output encoding (HTML, attribute, JS, URL contexts differ).
+  Never render untrusted data with template engines that bypass autoescaping.
+- SSRF/OpenRedirect: validate URLs against an explicit allowlist of schemes and hosts;
+  resolve DNS before fetching and forbid redirects to non-allowlisted hosts.
+- Deserialization/SSTI/XXE: never deserialize untrusted data (pickle, yaml.load,
+  marshal) or render user input as templates/XML; use safe formats (JSON) and
+  parsers with external entities disabled.
+- CommandInjection: never pass user input to a shell; use argv arrays, pin the
+  executable by absolute path, and reject shell metacharacters.
+- PrototypePollution: deep-merge only own properties; drop "__proto__",
+  "constructor", and "prototype" keys from untrusted objects.
+- Audit helper/utility modules and secondary code paths with the same rigor as
+  the main task files — vulnerabilities hide where nobody looks.
 - Use secure defaults for all configurations.
 
 Respond with your final code patch intended as a git diff.
