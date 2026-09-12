@@ -85,15 +85,23 @@ function detectLanguageLabel(lang: string): string {
   return labels[lang] || lang;
 }
 
-function SyntaxHighlight({ code }: { code: string }) {
-  const highlighted = code
+function escapeHtml(text: string): string {
+  return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
-  let colorized = highlighted;
+interface Token {
+  text: string;
+  className?: string;
+}
 
-  const jsPatterns: [RegExp, string][] = [
+function tokenize(code: string): Token[] {
+  const tokens: Token[] = [];
+  const patterns: [RegExp, string][] = [
     [/(\/\/[^\n]*)/g, "text-outline italic"],
     [/(#[^\n]*)/g, "text-outline italic"],
     [/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, "text-tertiary"],
@@ -103,11 +111,65 @@ function SyntaxHighlight({ code }: { code: string }) {
     [/([{}()[\];,.])/g, "text-outline"],
   ];
 
-  colorized = jsPatterns.reduce((acc, [re, cls]) => acc.replace(re, `<span class="${cls}">$1</span>`), colorized);
+  // Find all matches with their positions
+  const matches: Array<{ start: number; end: number; className: string }> = [];
+  for (const [regex, className] of patterns) {
+    const globalRegex = new RegExp(regex.source, regex.flags);
+    let match;
+    while ((match = globalRegex.exec(code)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        className,
+      });
+    }
+  }
+
+  // Sort by position, then by length (longest first)
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+
+  // Remove overlapping matches (keep first/longest)
+  const validMatches: Array<{ start: number; end: number; className: string }> = [];
+  let lastEnd = 0;
+  for (const m of matches) {
+    if (m.start >= lastEnd) {
+      validMatches.push(m);
+      lastEnd = m.end;
+    }
+  }
+
+  // Build tokens
+  let pos = 0;
+  for (const m of validMatches) {
+    if (pos < m.start) {
+      tokens.push({ text: code.slice(pos, m.start) });
+    }
+    tokens.push({ text: code.slice(m.start, m.end), className: m.className });
+    pos = m.end;
+  }
+  if (pos < code.length) {
+    tokens.push({ text: code.slice(pos) });
+  }
+
+  return tokens;
+}
+
+function SyntaxHighlight({ code }: { code: string }) {
+  const tokens = tokenize(code);
 
   return (
-    <pre className="font-code-stream text-[13px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words p-0 m-0 bg-transparent">
-      <code dangerouslySetInnerHTML={{ __html: colorized }} />
+    <pre className="font-code text-[13px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words p-0 m-0 bg-transparent">
+      <code>
+        {tokens.map((token, i) =>
+          token.className ? (
+            <span key={i} className={token.className}>
+              {token.text}
+            </span>
+          ) : (
+            <span key={i}>{token.text}</span>
+          )
+        )}
+      </code>
     </pre>
   );
 }

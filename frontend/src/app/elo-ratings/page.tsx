@@ -85,8 +85,8 @@ export default function EloRatingsPage() {
     return sorted.map((e) => e.developer_rating);
   }, [episodes]);
 
-  const attackerWinPct = stats.total > 0 ? ((stats.losses / stats.total) * 100).toFixed(1) : "0.0";
-  const developerWinPct = stats.total > 0 ? ((stats.wins / stats.total) * 100).toFixed(1) : "0.0";
+  const attackerWinPct = stats.total > 0 ? ((stats.wins / stats.total) * 100).toFixed(1) : "0.0";
+  const developerWinPct = stats.total > 0 ? ((stats.losses / stats.total) * 100).toFixed(1) : "0.0";
 
   if (loading) {
     return (
@@ -161,11 +161,11 @@ export default function EloRatingsPage() {
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-xl bg-surface-container-low p-3">
-                  <p className="font-headline text-xl font-bold text-tertiary">{stats.losses}</p>
+                  <p className="font-headline text-xl font-bold text-tertiary">{stats.wins}</p>
                   <p className="font-label text-[10px] text-on-surface-variant uppercase">Wins</p>
                 </div>
                 <div className="rounded-xl bg-surface-container-low p-3">
-                  <p className="font-headline text-xl font-bold text-error">{stats.wins}</p>
+                  <p className="font-headline text-xl font-bold text-error">{stats.losses}</p>
                   <p className="font-label text-[10px] text-on-surface-variant uppercase">Losses</p>
                 </div>
                 <div className="rounded-xl bg-surface-container-low p-3">
@@ -217,11 +217,11 @@ export default function EloRatingsPage() {
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-xl bg-surface-container-low p-3">
-                  <p className="font-headline text-xl font-bold text-tertiary">{stats.wins}</p>
+                  <p className="font-headline text-xl font-bold text-tertiary">{stats.losses}</p>
                   <p className="font-label text-[10px] text-on-surface-variant uppercase">Wins</p>
                 </div>
                 <div className="rounded-xl bg-surface-container-low p-3">
-                  <p className="font-headline text-xl font-bold text-error">{stats.losses}</p>
+                  <p className="font-headline text-xl font-bold text-error">{stats.wins}</p>
                   <p className="font-label text-[10px] text-on-surface-variant uppercase">Losses</p>
                 </div>
                 <div className="rounded-xl bg-surface-container-low p-3">

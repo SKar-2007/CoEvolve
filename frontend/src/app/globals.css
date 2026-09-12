@@ -74,3 +74,16 @@ body { overscroll-behavior: none; background: var(--color-surface); color: var(-
   50% { opacity: 0.4; }
 }
 .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* Font size variants */
+.font-label-xs { font-family: var(--font-label); font-size: 0.625rem; line-height: 0.875rem; }
+.font-label-sm { font-family: var(--font-label); font-size: 0.75rem; line-height: 1rem; }
+.font-label-md { font-family: var(--font-label); font-size: 0.875rem; line-height: 1.25rem; }
+
+.font-headline-sm { font-family: var(--font-headline); font-size: 1rem; line-height: 1.5rem; }
+.font-headline-md { font-family: var(--font-headline); font-size: 1.25rem; line-height: 1.75rem; }
+.font-headline-lg { font-family: var(--font-headline); font-size: 1.5rem; line-height: 2rem; }
+.font-headline-xl { font-family: var(--font-headline); font-size: 2rem; line-height: 2.5rem; }
+
+.font-code { font-family: var(--font-label); font-size: 0.8125rem; line-height: 1.25rem; }
+.font-code-sm { font-family: var(--font-label); font-size: 0.75rem; line-height: 1rem; }
