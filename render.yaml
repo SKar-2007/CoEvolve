@@ -1,3 +1,18 @@
+# Backing services are NOT provisioned here on purpose: free-tier database
+# plans come and go. Use managed Postgres (Supabase/Neon/Render) + managed
+# Redis (Upstash/Render Key Value) and paste the URLs into the sync:false
+# env vars below. See DEPLOY.md "Deploy to Render" for the full checklist.
+# If your plan supports them, you can add:
+#
+# databases:
+#   - name: coevolve-db
+#     plan: starter
+# keyValue:
+#   - name: coevolve-redis
+#     plan: starter
+#
+# ...and wire DATABASE_URL / REDIS_URL via fromDatabase / fromService
+# properties instead of sync:false.
 services:
   - type: web
     name: coevolve-api

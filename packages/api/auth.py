@@ -354,14 +354,45 @@ class RateLimiter:
             self._windows.clear()
 
 
+_limiter_alert_at: float = 0.0
+_limiter_alert_lock = threading.Lock()
+LIMITER_ALERT_COOLDOWN_S = 15 * 60
+
+
+def _alert_limiter_outage() -> None:
+    """Alert (at most once per cooldown) that Redis rate limiting is down.
+
+    Never raises — alerting must not break request handling. Uses Slack when
+    SLACK_WEBHOOK_URL is set, otherwise logs via the fallback channel.
+    """
+    global _limiter_alert_at
+    now = time.time()
+    with _limiter_alert_lock:
+        if now - _limiter_alert_at < LIMITER_ALERT_COOLDOWN_S:
+            return
+        _limiter_alert_at = now
+    try:
+        from ..telemetry.alerting import AlertManager, LogChannel, SlackChannel
+
+        manager = AlertManager()
+        webhook = os.getenv("SLACK_WEBHOOK_URL", "")
+        manager.add_channel(SlackChannel(webhook) if webhook else LogChannel())
+        manager.notify_error(
+            "Redis rate limiter unavailable — requests are not being limited",
+            context="packages.api.auth.RedisRateLimiter",
+        )
+    except Exception:
+        logger.warning("Limiter-outage notification failed", exc_info=True)
+
+
 class RedisRateLimiter:
     """Redis sliding-window rate limiter shared across workers/processes.
 
     Uses one sorted set per identifier (``coevolve:rl:<id>``) with request
     timestamps as scores. Atomicity comes from Redis single-command
     semantics plus add-then-count (a denied request removes its own entry).
-    On Redis errors it fails open with a warning so a cache outage does not
-    take the API down; wire telemetry/alerting to that log in production.
+    On Redis errors it fails open with a warning plus a throttled alert so
+    a cache outage does not take the API down silently.
     """
 
     KEY_PREFIX = "coevolve:rl:"
@@ -421,6 +452,7 @@ class RedisRateLimiter:
             }
         except Exception:
             logger.warning("Redis rate limiter unavailable, allowing request", exc_info=True)
+            _alert_limiter_outage()
             return True, fallback
 
     def reset(self, identifier: str | None = None) -> None:

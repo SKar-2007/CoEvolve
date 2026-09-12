@@ -296,6 +296,8 @@ export default function Dashboard() {
   const [epQuery, setEpQuery] = useState("");
   const [epStatus, setEpStatus] = useState("all");
   const [epOutcome, setEpOutcome] = useState("all");
+  const [epLimit, setEpLimit] = useState(100);
+  const EP_PAGE = 100;
   // Pause auto-refresh while the user inspects details so the UI doesn't jump.
   const interactiveRef = useRef(false);
   interactiveRef.current =
@@ -310,7 +312,7 @@ export default function Dashboard() {
       };
       const [m, e, r, c, pc, ph, j] = await Promise.all([
         get("/metrics"),
-        get("/episodes?limit=100"),
+        get(`/episodes?limit=${epLimit}`),
         get("/rules?limit=100"),
         get("/vulnerabilities/coverage"),
         get("/prompts/current"),
@@ -330,7 +332,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [epLimit]);
 
   useEffect(() => {
     fetchData();
@@ -879,6 +881,14 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
+              {episodes.length >= epLimit && (
+                <button
+                  onClick={() => setEpLimit((n) => n + EP_PAGE)}
+                  style={{ marginTop: 8, background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer", color: "var(--text)" }}
+                >
+                  Load more ({episodes.length} loaded)
+                </button>
+              )}
             </div>
           )}
         </Section>

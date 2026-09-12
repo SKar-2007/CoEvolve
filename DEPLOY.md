@@ -1,8 +1,36 @@
 # Deployment Guide
 
-Production deployment of CoEvolve Sandbox using Docker Compose.
+Production deployment of CoEvolve Sandbox using Docker Compose or Render.
 
-## Prerequisites
+## Deploy to Render
+
+`render.yaml` provisions the web service only — create the backing services
+first (free-tier database plans change often, so they are deliberately not
+in the blueprint):
+
+1. **Postgres** — Supabase, Neon, or Render Postgres. Copy the connection
+   string (pooled, port 6543 for Supabase).
+2. **Redis** — Upstash or Render Key Value. Copy the `redis://` URL.
+3. **Deploy the blueprint** (`render.yaml`) in the Render dashboard.
+4. **Set env vars** (all `sync: false` entries must be filled manually):
+
+   | Variable | Value |
+   |----------|-------|
+   | `DATABASE_URL` | Postgres connection string |
+   | `REDIS_URL` | Redis URL (enables async jobs + shared rate limiter) |
+   | `GROQ_API_KEY` | At least one LLM provider key |
+   | `ADMIN_API_KEY` | `cov_...` bootstrap admin credential (only its hash is stored) |
+   | `CORS_ORIGINS` | Your frontend origin, e.g. `https://app.example.com` |
+   | `REQUIRE_AUTH` / `API_KEY_STORE` | Pre-set to `true` / `db` — leave as is |
+
+5. **Verify**: `curl https://<your-service>/health` → `{"status":"healthy"}`.
+
+Without `REDIS_URL` the API still runs, but async `/training/jobs` only
+works single-process and rate limits are per-instance.
+
+## Deploy with Docker Compose
+
+#### Prerequisites
 
 - Docker 24+ with Compose v2
 - 4+ CPU cores, 8GB+ RAM

@@ -155,6 +155,38 @@ class TestRedisRateLimiter:
         assert allowed is True
 
 
+class TestOutageAlert:
+    def test_failure_triggers_alert_hook(self, monkeypatch):
+        import packages.api.auth as auth_module
+
+        calls = []
+        monkeypatch.setattr(auth_module, "_alert_limiter_outage", lambda: calls.append(1))
+
+        class Broken:
+            def pipeline(self):
+                raise ConnectionError("down")
+
+        r = RedisRateLimiter(Broken())
+        assert r.is_allowed("k", "standard")[0] is True
+        assert r.is_allowed("k", "standard")[0] is True
+        assert len(calls) == 2  # hook fires per failure; throttling lives inside it
+
+    def test_alert_throttled_by_cooldown(self, monkeypatch):
+        import packages.api.auth as auth_module
+
+        monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+        old = auth_module._limiter_alert_at
+        auth_module._limiter_alert_at = 0.0
+        try:
+            auth_module._alert_limiter_outage()
+            first = auth_module._limiter_alert_at
+            assert first > 0
+            auth_module._alert_limiter_outage()
+            assert auth_module._limiter_alert_at == first
+        finally:
+            auth_module._limiter_alert_at = old
+
+
 class TestLimiterSelection:
     def test_memory_without_redis_url(self, monkeypatch):
         monkeypatch.setenv("REDIS_URL", "")
