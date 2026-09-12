@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -26,10 +29,19 @@ from .task_queue import TaskQueue, TrainingJob
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    Base.metadata.create_all(get_engine())
+    _seed_elo()
+    yield
+
+
 app = FastAPI(
     title="CoEvolve Sandbox API",
     version="0.1.0",
     description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
+    lifespan=lifespan,
 )
 
 # Global task queue instance
@@ -41,12 +53,6 @@ def get_task_queue() -> TaskQueue:
     if _task_queue is None:
         _task_queue = TaskQueue(redis_url=settings.redis_url)
     return _task_queue
-
-
-@app.on_event("startup")
-def startup() -> None:
-    Base.metadata.create_all(get_engine())
-    _seed_elo()
 
 
 def _seed_elo() -> None:

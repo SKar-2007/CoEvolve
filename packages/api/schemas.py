@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EpisodeStatus(str, Enum):
@@ -23,6 +23,8 @@ class EpisodeCreate(BaseModel):
 
 
 class EpisodeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     episode_id: str
     status: EpisodeStatus
     vulnerability_class: str | None = None
@@ -37,9 +39,6 @@ class EpisodeRead(BaseModel):
     prompt_version: int = 1
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class PromptVersionRead(BaseModel):
     version: int
@@ -49,13 +48,12 @@ class PromptVersionRead(BaseModel):
 
 
 class RuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     rule_id: str
     rule_text: str
     vulnerability_class: str
     version: int
-
-    class Config:
-        from_attributes = True
 
 
 class MetricsSnapshot(BaseModel):
