@@ -1,6 +1,0 @@
-{
-    "framework": "vite",
-    "buildCommand": "echo 'static'",
-    "outputDirectory": ".",
-    "installCommand": "echo 'no install'"
-}

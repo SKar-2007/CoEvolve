@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coevolve-cli"
+version = "0.1.0"
+description = "CoEvolve CLI — Adversarial Training as a Service"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "sqlalchemy>=2.0",
+]
+
+[project.scripts]
+coevolve = "packages.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["packages.cli.*"]

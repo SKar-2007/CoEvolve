@@ -1,3 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coevolve"
+version = "0.1.0"
+description = "CoEvolve — Adversarial Training as a Service"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "sqlalchemy>=2.0",
+    "fastapi>=0.100",
+    "uvicorn>=0.23",
+]
+
+[project.scripts]
+coevolve = "packages.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["packages.*"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
