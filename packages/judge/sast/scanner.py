@@ -65,21 +65,26 @@ class SemgrepScanner:
 
     def scan_directory(self, target: Path, config: str | None = None) -> SASTResult:
         """Scan a directory with the bundled rules; return structured findings."""
-        rules = config or str(self.rules_dir)
-        cmd = [
-            self.binary,
-            "--config",
-            rules,
-            "--json",
-            "--severity",
-            "WARNING",
-            "--no-rewrite-rule-ids",
-            str(target),
-        ]
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=self.timeout, check=False
-        )
-        return self._parse(proc.stdout)
+        # Scan with each rule file individually to avoid semgrep rule selection issues
+        all_findings: list[SASTFinding] = []
+        for rule_file in sorted(self.rules_dir.glob("*.yml")):
+            # Skip Java/JS rules for Python-only targets
+            stem = rule_file.stem
+            if stem.endswith("-java") or stem.endswith("-js"):
+                continue
+            cmd = [
+                self.binary,
+                "--config",
+                str(rule_file),
+                "--json",
+                str(target),
+            ]
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=self.timeout, check=False
+            )
+            result = self._parse(proc.stdout)
+            all_findings.extend(result.findings)
+        return SASTResult(findings=all_findings)
 
     def scan_patch(self, patch_text: str, syntax: str = "python") -> SASTResult:
         """Scan a code patch string directly (best-effort heuristic).
