@@ -196,6 +196,46 @@ def get_rule(rule_id: str, db: Session = Depends(get_db)) -> RuleRecord:
 
 
 # ---------------------------------------------------------------------------
+# Rule Portability (Export/Import)
+# ---------------------------------------------------------------------------
+from ..evolution.portability import RulePackage, export_rules, import_rules
+
+
+@app.post("/rules/export")
+def export_rules_endpoint(
+    name: str = "exported-rules",
+    description: str = "",
+    version: str = "1.0.0",
+    author: str = "",
+    db: Session = Depends(get_db),
+):
+    from ..evolution.store import PromptStore
+
+    store = PromptStore()
+    pkg = export_rules(store, name=name, description=description, version=version, author=author)
+    return {
+        "package_id": pkg.package_id,
+        "name": pkg.name,
+        "version": pkg.version,
+        "rules_count": len(pkg.rules),
+        "rules": pkg.as_dict()["rules"],
+    }
+
+
+@app.post("/rules/import")
+def import_rules_endpoint(
+    package: RulePackage,
+    merge: bool = True,
+    db: Session = Depends(get_db),
+):
+    from ..evolution.store import PromptStore
+
+    store = PromptStore()
+    count = import_rules(store, package, merge=merge)
+    return {"imported": count, "total": len(store.rules())}
+
+
+# ---------------------------------------------------------------------------
 # Prompt Diffs
 # ---------------------------------------------------------------------------
 @app.get("/prompts/diff/{v1}/{v2}", response_model=PromptDiffResponse)

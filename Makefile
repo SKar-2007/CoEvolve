@@ -1,5 +1,5 @@
 .PHONY: install dev test lint typecheck docker-up docker-down docker-prod setup run-api \
-       demo benchmark stress clean build-sandbox dast
+       demo benchmark stress clean build-sandbox dast rules-export rules-import
 
 # ---------------------------------------------------------------------------
 # Development
@@ -82,6 +82,12 @@ stress:
 
 dast:
 	python -m packages.judge.dast.runner --all
+
+rules-export:
+	python scripts/rules_export.py --name coevolve-rules -o rules.json
+
+rules-import:
+	python scripts/rules_import.py --input rules.json
 
 # ---------------------------------------------------------------------------
 # Cleanup
