@@ -1,5 +1,9 @@
 # CoEvolve Sandbox
 
+[![CI](https://github.com/SKar-2007/CoEvolve/actions/workflows/ci.yml/badge.svg)](https://github.com/SKar-2007/CoEvolve/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Automated Adversarial-Training-as-a-Service (A-TaaS) framework for autonomous coding agents.
 
 CoEvolve Sandbox pits an **Attacker LLM Agent** against a **Developer LLM Agent** inside
@@ -21,12 +25,12 @@ automatically matches task difficulty to developer capability.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Training Loop Controller                │
-│  Attacker → Developer → Judge → Distiller → RegressionGuard│
-│                         ↓              ↓                    │
-│                    Elo Update    PromptStore (Git-backed)   │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Training Loop Controller                      │
+│  Attacker → Developer → Judge → Distiller → RegressionGuard     │
+│                         ↓              ↓                         │
+│                    Elo Update    PromptStore (Git-backed)        │
+└─────────────────────────────────────────────────────────────────┘
          │                                    │
     ┌────┴────┐    ┌──────────┐    ┌──────────┴──────────┐
     │   LLM   │    │  Redis   │    │  PostgreSQL + API   │
@@ -73,54 +77,15 @@ automatically matches task difficulty to developer capability.
 | **Cost Tracking** | Per-call token counting with provider-specific pricing |
 | **LLM Caching** | LRU cache for deterministic calls (temperature=0) |
 
-## Repository Layout
-
-```
-packages/
-├── api/          # FastAPI REST API (episodes, prompts, elo, rules, training)
-│   ├── main.py       # All API endpoints
-│   ├── models.py     # SQLAlchemy ORM models
-│   ├── schemas.py    # Pydantic request/response schemas
-│   ├── config.py     # pydantic-settings configuration
-│   ├── database.py   # Engine, session, base classes
-│   └── task_queue.py # Redis-backed async job queue
-├── agents/       # LLM agent implementations
-│   ├── training_loop.py    # Co-evolutionary orchestrator
-│   ├── cost_tracking.py    # Token/cost tracking + LLM caching
-│   ├── llm.py              # Unified LLM client (Anthropic, OpenAI, OpenRouter)
-│   ├── attacker/           # Adversarial task generator
-│   ├── developer/          # Code patch agent (simple + ReAct tool-use)
-│   ├── distiller/          # Trace-to-rule conversion
-│   └── regression_guard/   # Rule regression detection
-├── judge/        # Hybrid Judge Engine
-│   ├── engine.py       # Orchestrates SAST + DAST
-│   ├── sast/           # Semgrep scanner + 7 rule packs
-│   └── dast/           # Dynamic exploit executor + payload library
-├── elo/          # Elo rating system
-│   ├── calculator.py   # Zero-sum Elo engine
-│   ├── difficulty.py   # 10-tier difficulty mapper
-│   └── history.py      # Rating history tracker
-├── evolution/    # Prompt-Evolution Engine
-│   ├── store.py    # Git-backed versioned prompt store
-│   └── dedupe.py   # Semantic deduplication (sentence-transformers)
-├── sandbox/      # Docker container orchestration
-│   ├── manager.py      # Container lifecycle (create/exec/destroy)
-│   ├── lifecycle.py    # Episode orchestrator
-│   ├── config.py       # Sandbox configuration + seccomp
-│   └── docker/         # Dockerfiles + seccomp profiles
-└── telemetry/    # Monitoring and alerting
-    ├── exporters/metrics.py  # Prometheus counters/gauges/histograms
-    └── alerting.py           # Slack/Email/PagerDuty notifications
-data/             # Vulnerability taxonomy + exploit payloads
-tests/            # 104 tests (unit + integration)
-scripts/          # setup.sh, test.sh, demo.py
-```
-
 ## Quick Start
 
 ### 1. Install dependencies
 
 ```bash
+# Clone and enter the repo
+git clone https://github.com/SKar-2007/CoEvolve.git
+cd CoEvolve
+
 # Create virtual environment
 python -m venv .venv
 source .venv/bin/activate
@@ -201,26 +166,46 @@ make test
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL connection |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection |
 | `JWT_SECRET` | `change-me` | JWT signing secret |
+| `GRAFANA_PASSWORD` | `admin` | Grafana admin password |
 
 ## Testing
 
 ```
 127 tests passing (6 Docker tests require daemon)
 ├── tests/unit/           # 44 unit tests
-│   ├── test_elo.py           # Elo calculator + difficulty
-│   ├── test_judge.py         # Judge verdict + DAST
-│   ├── test_history.py       # Rating history tracker
-│   ├── test_dedupe.py        # Semantic deduplication
-│   ├── test_regression_guard.py  # Regression detection
-│   └── test_telemetry.py     # Prometheus metrics
+│   ├── test_elo.py              # Elo calculator + difficulty tiers
+│   ├── test_judge.py            # Judge verdict + DAST
+│   ├── test_history.py          # Rating history tracker
+│   ├── test_dedupe.py           # Semantic deduplication
+│   ├── test_regression_guard.py # Regression detection
+│   └── test_telemetry.py        # Prometheus metrics
 ├── tests/integration/    # 83 integration tests
-│   ├── test_agents_pipeline.py  # Full attacker→developer→judge pipeline
-│   ├── test_api_crud.py         # All API endpoints
-│   ├── test_evolution.py        # Prompt store versioning
-│   ├── test_sandbox.py          # Sandbox config + validation
-│   └── test_sandbox_lifecycle.py # Container lifecycle (29 tests)
+│   ├── test_agents_pipeline.py     # Full attacker→developer→judge pipeline
+│   ├── test_api_crud.py            # All 16 API endpoints
+│   ├── test_evolution.py           # Prompt store versioning
+│   ├── test_sandbox.py             # Sandbox config + validation
+│   └── test_sandbox_lifecycle.py   # Container lifecycle (29 tests)
 └── Makefile targets: test, lint, typecheck
 ```
+
+## Benchmarking
+
+```bash
+# Mock mode (no API key)
+make benchmark          # 100 episodes
+make stress             # 1000 episodes
+
+# Custom
+python scripts/benchmark.py --episodes 5000 --output report.json
+```
+
+### Stress Test Results
+
+| Episodes | Time | Eps/sec | Errors | Tokens |
+|----------|------|---------|--------|--------|
+| 1,000 | 0.5s | 2,203 | 0 | 600K |
+| 2,000 | 0.9s | 2,223 | 0 | 1.2M |
+| 5,000 | 2.3s | 2,189 | 0 | 3M |
 
 ## Deployment
 
@@ -250,6 +235,65 @@ See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, tro
 | Prometheus | 9090 | Metrics collection |
 | Grafana | 3000 | Dashboards |
 
+## Repository Layout
+
+```
+packages/
+├── api/                # FastAPI REST API (16 endpoints)
+│   ├── main.py             # All API routes
+│   ├── models.py           # SQLAlchemy ORM models
+│   ├── schemas.py          # Pydantic request/response schemas
+│   ├── config.py           # pydantic-settings configuration
+│   ├── database.py         # Engine, session, base classes
+│   └── task_queue.py       # Redis-backed async job queue
+├── agents/             # LLM agent implementations
+│   ├── training_loop.py    # Co-evolutionary orchestrator
+│   ├── cost_tracking.py    # Token/cost tracking + LLM caching
+│   ├── llm.py              # Unified LLM client (Anthropic, OpenAI, OpenRouter)
+│   ├── attacker/           # Adversarial task generator
+│   │   ├── generator.py        # Task generation with difficulty scaling
+│   │   └── prompts.py          # System prompts
+│   ├── developer/          # Code patch agent
+│   │   ├── executor.py         # Simple single-turn executor
+│   │   └── tools.py            # ReAct tool-use agent (7 tools)
+│   ├── distiller/          # Trace-to-rule conversion
+│   │   └── pipeline.py         # Failure trace → security rule
+│   └── regression_guard/   # Rule regression detection
+│       └── guard.py            # Retroactive rule validation
+├── judge/              # Hybrid Judge Engine
+│   ├── engine.py           # Orchestrates SAST + DAST
+│   ├── sast/               # Semgrep scanner + 7 rule packs
+│   └── dast/               # Dynamic exploit executor + payload library
+├── elo/                # Elo rating system
+│   ├── calculator.py       # Zero-sum Elo engine
+│   ├── difficulty.py       # 10-tier difficulty mapper
+│   └── history.py          # Rating history tracker
+├── evolution/          # Prompt-Evolution Engine
+│   ├── store.py            # Git-backed versioned prompt store
+│   └── dedupe.py           # Semantic deduplication (sentence-transformers)
+├── sandbox/            # Docker container orchestration
+│   ├── manager.py          # Container lifecycle (create/exec/destroy)
+│   ├── lifecycle.py        # Episode orchestrator
+│   ├── config.py           # Sandbox configuration + seccomp
+│   └── docker/             # Dockerfiles + seccomp profiles
+│       ├── Dockerfile          # Base sandbox image
+│       ├── hardened.Dockerfile # Hardened production image
+│       ├── entrypoint.sh       # Container entrypoint
+│       └── seccomp-profile.json # Syscall filter profile
+└── telemetry/          # Monitoring and alerting
+    ├── exporters/metrics.py    # Prometheus counters/gauges/histograms
+    └── alerting.py             # Slack/Email/PagerDuty notifications
+data/                   # Vulnerability taxonomy + exploit payloads
+tests/                  # 127 tests (unit + integration)
+scripts/                # demo.py, benchmark.py, setup.sh
+docker/
+└── api/Dockerfile          # Multi-stage API image
+.github/workflows/ci.yml   # CI pipeline (lint, typecheck, tests, coverage)
+docker-compose.yml         # Development compose
+docker-compose.prod.yml    # Production compose (resource limits, log rotation)
+DEPLOY.md                  # Full deployment guide
+```
+
 ## Documentation
 
 | Document | Purpose |
@@ -263,6 +307,7 @@ See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, tro
 | [threat_model.md](threat_model.md) | STRIDE threat analysis and attack trees |
 | [vulnerability_taxonomy.md](vulnerability_taxonomy.md) | 25+ target vulnerability classes |
 | [roadmap.md](roadmap.md) | Long-term strategic milestones |
+| [DEPLOY.md](DEPLOY.md) | Production deployment guide |
 
 ## License
 
