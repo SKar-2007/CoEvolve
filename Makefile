@@ -55,6 +55,12 @@ run-api:
 run-api-prod:
 	uvicorn packages.api.main:app --host 0.0.0.0 --port 8000 --workers 4
 
+worker:
+	python -m packages.api.worker
+
+worker-once:
+	python -m packages.api.worker --once
+
 # ---------------------------------------------------------------------------
 # Scripts
 # ---------------------------------------------------------------------------
