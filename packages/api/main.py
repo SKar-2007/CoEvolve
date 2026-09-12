@@ -10,11 +10,15 @@ from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
+    EloHistoryResponse,
     EpisodeCreate,
     EpisodeRead,
     MetricsSnapshot,
+    PromptDiffResponse,
     PromptVersionRead,
     RuleRead,
+    TrainingRunRequest,
+    TrainingRunResponse,
 )
 
 settings = get_settings()
@@ -176,3 +180,161 @@ def list_rules(
     if approved_only:
         q = q.filter(RuleRecord.approved.is_(True))
     return q.order_by(RuleRecord.created_at.desc()).limit(limit).all()
+
+
+@app.get("/rules/{rule_id}", response_model=RuleRead)
+def get_rule(rule_id: str, db: Session = Depends(get_db)) -> RuleRecord:
+    rule = db.get(RuleRecord, rule_id)
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    return rule
+
+
+# ---------------------------------------------------------------------------
+# Prompt Diffs
+# ---------------------------------------------------------------------------
+@app.get("/prompts/diff/{v1}/{v2}", response_model=PromptDiffResponse)
+def prompt_diff(v1: int, v2: int, db: Session = Depends(get_db)) -> PromptDiffResponse:
+    from ..evolution.store import PromptStore
+
+    store = PromptStore()
+    diff = store.diff(v1, v2)
+    return PromptDiffResponse(
+        version_a=v1,
+        version_b=v2,
+        added_rules=diff.get("added", []),
+        removed_rules=diff.get("removed", []),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Elo History
+# ---------------------------------------------------------------------------
+@app.get("/elo/history", response_model=EloHistoryResponse)
+def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
+    record = db.get(EloRecord, "global")
+    return EloHistoryResponse(
+        history=[],  # TODO: store history in DB
+        current={
+            "attacker": record.attacker_rating if record else 1500.0,
+            "developer": record.developer_rating if record else 1500.0,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Episode Stop
+# ---------------------------------------------------------------------------
+@app.post("/episodes/{episode_id}/stop", response_model=EpisodeRead)
+def stop_episode(episode_id: str, db: Session = Depends(get_db)) -> EpisodeRecord:
+    ep = db.get(EpisodeRecord, episode_id)
+    if not ep:
+        raise HTTPException(404, "Episode not found")
+    if ep.status in ("completed", "failed"):
+        raise HTTPException(400, "Episode already finished")
+    ep.status = "failed"
+    ep.error = "Stopped by user"
+    db.commit()
+    db.refresh(ep)
+    return ep
+
+
+# ---------------------------------------------------------------------------
+# Training Loop
+# ---------------------------------------------------------------------------
+@app.post("/training/run", response_model=TrainingRunResponse)
+def run_training_episode(
+    body: TrainingRunRequest, db: Session = Depends(get_db)
+) -> TrainingRunResponse:
+    """Execute one co-evolutionary training episode."""
+    from ..agents.llm import build_client
+    from ..agents.training_loop import EpisodeConfig, TrainingLoop
+
+    # Get current Elo
+    elo_record = db.get(EloRecord, "global")
+    current_ratings = (
+        (elo_record.attacker_rating, elo_record.developer_rating)
+        if elo_record
+        else (1500.0, 1500.0)
+    )
+
+    # Get current prompt version
+    latest_prompt = (
+        db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
+    )
+    prompt_version = latest_prompt.version if latest_prompt else 0
+
+    # Build LLM client
+    settings = get_settings()
+    provider = "anthropic" if settings.anthropic_api_key else "openai"
+    llm = build_client(provider)
+
+    # Build and run training loop
+    loop = TrainingLoop(llm=llm, prompt_version=prompt_version)
+    config = EpisodeConfig(
+        vulnerability_class=body.vulnerability_class,
+        language=body.language,
+        context_hint=body.context_hint,
+        max_retries=body.max_retries,
+    )
+    trace = loop.run_episode(config, current_ratings=current_ratings)
+
+    # Persist episode to DB
+    ep = EpisodeRecord(
+        id=trace.episode_id,
+        status="completed" if not trace.error else "failed",
+        vulnerability_class=body.vulnerability_class,
+        difficulty_tier=trace.difficulty_tier,
+        outcome=trace.judge_outcome,
+        task_description=trace.task.task_description if trace.task else "",
+        patch_text=trace.patch_text,
+        judge_verdict=trace.judge_verdict,
+        attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
+        developer_rating=trace.elo_after.get("developer", current_ratings[1]),
+        prompt_version=trace.prompt_version,
+        error=trace.error or None,
+    )
+    db.add(ep)
+
+    # Update global Elo
+    if elo_record:
+        elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
+        elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
+        elo_record.episodes_played += 1
+    else:
+        db.add(EloRecord(
+            id="global",
+            attacker_rating=trace.elo_after.get("attacker", 1500.0),
+            developer_rating=trace.elo_after.get("developer", 1500.0),
+            episodes_played=1,
+        ))
+
+    # Record distilled rule if any
+    if trace.distilled_rule and trace.regression_passed:
+        rule = trace.distilled_rule
+        db.add(RuleRecord(
+            rule_text=rule.rule_text,
+            vulnerability_class=rule.vulnerability_class,
+            source_pattern=rule.source_pattern,
+            recommended_fix=rule.recommended_fix,
+            source_trace_id=rule.source_trace_id,
+            prompt_version=trace.prompt_version,
+            approved=True,
+        ))
+
+    db.commit()
+
+    return TrainingRunResponse(
+        episode_id=trace.episode_id,
+        status="completed" if not trace.error else "failed",
+        difficulty_tier=trace.difficulty_tier,
+        judge_outcome=trace.judge_outcome,
+        judge_verdict=trace.judge_verdict,
+        rule_distilled=trace.distilled_rule is not None and trace.regression_passed,
+        rule_text=trace.distilled_rule.rule_text if trace.distilled_rule else None,
+        regression_passed=trace.regression_passed,
+        elo_before=trace.elo_before,
+        elo_after=trace.elo_after,
+        duration_s=trace.duration_s,
+        error=trace.error or None,
+    )
