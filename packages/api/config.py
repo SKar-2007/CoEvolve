@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # LLM — Groq free tier (console.groq.com)
     llm_provider: str = "groq"
-    llm_model: str = "llama-3.1-8b-instant"
+    llm_model: str = "openai/gpt-oss-20b"
     groq_api_key: str = ""
 
     # Optional fallback providers
