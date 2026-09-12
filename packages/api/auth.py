@@ -298,11 +298,11 @@ TIER_LIMITS = {
 
 
 class RateLimiter:
-    """Thread-safe sliding window rate limiter.
+    """Thread-safe in-memory sliding window rate limiter.
 
     NOTE: state is per-process. With multiple uvicorn workers the effective
-    limit is multiplied by the worker count. Use a Redis-backed limiter
-    (e.g. sliding window in Redis) in production when running --workers > 1.
+    limit is multiplied by the worker count — set REDIS_URL in production
+    so get_rate_limiter() returns the shared RedisRateLimiter instead.
     """
 
     def __init__(self) -> None:
@@ -354,17 +354,133 @@ class RateLimiter:
             self._windows.clear()
 
 
-_rate_limiter: RateLimiter | None = None
+class RedisRateLimiter:
+    """Redis sliding-window rate limiter shared across workers/processes.
+
+    Uses one sorted set per identifier (``coevolve:rl:<id>``) with request
+    timestamps as scores. Atomicity comes from Redis single-command
+    semantics plus add-then-count (a denied request removes its own entry).
+    On Redis errors it fails open with a warning so a cache outage does not
+    take the API down; wire telemetry/alerting to that log in production.
+    """
+
+    KEY_PREFIX = "coevolve:rl:"
+
+    def __init__(self, client: Any) -> None:
+        self._redis = client
+
+    def _key(self, identifier: str) -> str:
+        return f"{self.KEY_PREFIX}{identifier}"
+
+    def is_allowed(self, key: str, tier: str = "standard") -> tuple[bool, dict[str, Any]]:
+        config = TIER_LIMITS.get(tier, TIER_LIMITS["standard"])
+        now = time.time()
+        rkey = self._key(key)
+        member = f"{now:.6f}:{secrets.token_hex(8)}"
+        fallback = {
+            "limit": config.requests_per_minute,
+            "remaining": config.requests_per_minute,
+            "reset": int(now + 60),
+        }
+        try:
+            pipe = self._redis.pipeline()
+            pipe.zremrangebyscore(rkey, 0, now - 3600)
+            pipe.zadd(rkey, {member: now})
+            pipe.expire(rkey, 3600)
+            pipe.execute()
+
+            recent = self._redis.zcount(rkey, now - 60, now)
+            total = self._redis.zcard(rkey)
+
+            if recent > config.requests_per_minute:
+                oldest = self._redis.zrangebyscore(
+                    rkey, now - 60, now, start=0, num=1, withscores=True
+                )
+                retry_after = max(1.0, 60 - (now - oldest[0][1])) if oldest else 60.0
+                self._redis.zrem(rkey, member)
+                return False, {
+                    "limit": config.requests_per_minute,
+                    "remaining": 0,
+                    "reset": int(now + retry_after),
+                    "retry_after": int(retry_after),
+                }
+
+            if total > config.requests_per_hour:
+                self._redis.zrem(rkey, member)
+                return False, {
+                    "limit": config.requests_per_hour,
+                    "remaining": 0,
+                    "reset": int(now + 3600),
+                    "retry_after": 3600,
+                }
+
+            return True, {
+                "limit": config.requests_per_minute,
+                "remaining": max(0, config.requests_per_minute - recent),
+                "reset": int(now + 60),
+            }
+        except Exception:
+            logger.warning("Redis rate limiter unavailable, allowing request", exc_info=True)
+            return True, fallback
+
+    def reset(self, identifier: str | None = None) -> None:
+        """Clear windows (all, or one identifier). Used by tests/ops."""
+        try:
+            if identifier is not None:
+                self._redis.delete(self._key(identifier))
+                return
+            keys: list[str] = []
+            if hasattr(self._redis, "scan_iter"):
+                keys = list(self._redis.scan_iter(f"{self.KEY_PREFIX}*"))
+            else:  # pragma: no cover - stub clients in tests may lack scan
+                keys = list(self._redis.keys(f"{self.KEY_PREFIX}*"))
+            if keys:
+                self._redis.delete(*keys)
+        except Exception:
+            logger.warning("Redis rate limiter reset failed", exc_info=True)
+
+
+_rate_limiter: RateLimiter | RedisRateLimiter | None = None
 _rate_limiter_lock = threading.Lock()
 
 
-def get_rate_limiter() -> RateLimiter:
+def _build_rate_limiter() -> RateLimiter | RedisRateLimiter:
+    try:
+        from .config import get_settings
+
+        redis_url = get_settings().resolved_redis_url
+    except Exception:
+        redis_url = ""
+    if redis_url:
+        try:
+            import redis
+
+            client = redis.from_url(redis_url, decode_responses=True)
+            client.ping()
+            logger.info("Using Redis-backed rate limiter")
+            return RedisRateLimiter(client)
+        except Exception:
+            logger.warning(
+                "Redis unavailable for rate limiting, using in-memory limiter",
+                exc_info=True,
+            )
+    return RateLimiter()
+
+
+def get_rate_limiter() -> RateLimiter | RedisRateLimiter:
     global _rate_limiter
     if _rate_limiter is None:
         with _rate_limiter_lock:
             if _rate_limiter is None:
-                _rate_limiter = RateLimiter()
+                _rate_limiter = _build_rate_limiter()
     return _rate_limiter
+
+
+def reset_rate_limiter() -> None:
+    """Reset the global limiter (for testing)."""
+    global _rate_limiter
+    with _rate_limiter_lock:
+        _rate_limiter = None
 
 
 # ---------------------------------------------------------------------------

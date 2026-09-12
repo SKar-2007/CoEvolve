@@ -2,30 +2,35 @@
 
 Central configuration for the CoEvolve security training platform.
 
-## Structure
+## Runtime configuration (source of truth)
+
+The application loads **all** runtime settings from the environment / `.env`
+via `packages/api/config.py` (`pydantic-settings`). See `.env.example` for
+the full variable list. There is no `load_config` helper — ignore any docs
+suggesting otherwise.
+
+## Reference YAMLs (not loaded)
 
 ```
 config/
-  settings.yml        # Main application settings
-  agents.yml          # Agent configuration
-  training.yml        # Training loop parameters
-  telemetry.yml       # Monitoring and alerting config
+  settings.yml        # Design reference: intended app settings
+  agents.yml          # Design reference: agent parameters
+  training.yml        # Design reference: training loop parameters
+  telemetry.yml       # Design reference: monitoring and alerting
 ```
 
-## Usage
-
-Configuration is loaded via environment variables or config files:
-
-```python
-from config import load_config
-config = load_config("settings")
-```
+These files document the intended configuration schema but **no code reads
+them**. Keep them in sync with `packages/api/config.py` / `.env.example`
+when adding settings, or delete them once superseded.
 
 ## Environment Variables
 
-Override any config value with environment variables:
+Key runtime variables (see `.env.example` for all):
 
 ```bash
-COEVOLVE_LOG_LEVEL=debug
-COEVOLVE_API_HOST=0.0.0.0
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+REQUIRE_AUTH=true
+API_KEY_STORE=db
+CORS_ORIGINS=https://app.example.com
 ```

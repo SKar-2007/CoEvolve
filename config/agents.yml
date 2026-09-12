@@ -1,3 +1,4 @@
+# REFERENCE ONLY — not loaded by the app. Runtime config lives in .env -> packages/api/config.py.
 # Agent Configuration
 
 attacker:

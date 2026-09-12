@@ -130,3 +130,27 @@ class EpisodeStopResponse(BaseModel):
     episode_id: str
     status: str
     message: str
+
+
+class TrainingJobEnqueueRequest(BaseModel):
+    vulnerability_class: str = "SQLi"
+    language: str = "python"
+    context_hint: str = ""
+    max_retries: int = 3
+    use_react: bool = False
+
+
+class TrainingJobRead(BaseModel):
+    job_id: str
+    status: str
+    vulnerability_class: str = "SQLi"
+    language: str = "python"
+    context_hint: str = ""
+    max_retries: int = 3
+    use_react: bool = False
+    queue_position: int | None = None
+    created_at: float = 0.0
+    started_at: float | None = None
+    completed_at: float | None = None
+    result: dict = Field(default_factory=dict)
+    error: str = ""

@@ -27,10 +27,13 @@ from .schemas import (
     PromptRead,
     RuleDetailRead,
     RuleRead,
+    TrainingJobEnqueueRequest,
+    TrainingJobRead,
     TrainingRunRequest,
     TrainingRunResponse,
     VulnerabilityCoverage,
 )
+from .task_queue import TrainingJob, get_task_queue
 from .training_service import (
     get_current_ratings,
     get_prompt_version,
@@ -381,6 +384,66 @@ def run_training_episode(
         duration_s=trace.duration_s,
         error=trace.error or None,
     )
+
+
+def _job_to_read(job: TrainingJob, queue_position: int | None = None) -> TrainingJobRead:
+    return TrainingJobRead(
+        job_id=job.job_id,
+        status=job.status.value,
+        vulnerability_class=job.vulnerability_class,
+        language=job.language,
+        context_hint=job.context_hint,
+        max_retries=job.max_retries,
+        use_react=job.use_react,
+        queue_position=queue_position,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        result=job.result,
+        error=job.error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Training — Async Jobs (non-blocking; processed by worker.py)
+# ---------------------------------------------------------------------------
+# NOTE: with the in-memory queue backend this only works single-process.
+# Multi-process deployments (uvicorn --workers + separate worker) require
+# REDIS_URL so the API and worker share queue state.
+@app.post("/training/jobs", response_model=TrainingJobRead, status_code=202)
+def enqueue_training_job(
+    body: TrainingJobEnqueueRequest,
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> TrainingJobRead:
+    """Enqueue a training episode and return immediately (202 Accepted)."""
+    queue = get_task_queue()
+    job = queue.enqueue(
+        TrainingJob(
+            vulnerability_class=body.vulnerability_class,
+            language=body.language,
+            context_hint=body.context_hint,
+            max_retries=body.max_retries,
+            use_react=body.use_react,
+        )
+    )
+    return _job_to_read(job, queue_position=queue.queue_length())
+
+
+@app.get("/training/jobs", response_model=list[TrainingJobRead])
+def list_training_jobs(
+    limit: int = Query(50, ge=1, le=200),
+) -> list[TrainingJobRead]:
+    """List recent training jobs (newest first)."""
+    return [_job_to_read(j) for j in get_task_queue().list_jobs(limit=limit)]
+
+
+@app.get("/training/jobs/{job_id}", response_model=TrainingJobRead)
+def get_training_job(job_id: str) -> TrainingJobRead:
+    """Poll a training job's status and result."""
+    job = get_task_queue().get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return _job_to_read(job)
 
 
 # ---------------------------------------------------------------------------

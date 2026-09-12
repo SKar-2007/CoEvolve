@@ -118,9 +118,13 @@ class TrainingWorker:
             finally:
                 db.close()
 
-            # Run training episode
+            # Run training episode (honours the job's use_react flag)
             tracked = CostTrackingClient(self._llm)
-            loop = TrainingLoop(llm=tracked, prompt_version=prompt_version)
+            loop = TrainingLoop(
+                llm=tracked,
+                prompt_version=prompt_version,
+                use_react=job.use_react,
+            )
             config = EpisodeConfig(
                 vulnerability_class=job.vulnerability_class,
                 language=job.language,

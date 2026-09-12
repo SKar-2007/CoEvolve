@@ -50,7 +50,7 @@ class EpisodeRecord(Base):
     )
     vulnerability_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
     difficulty_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0=secure, 1=vuln
+    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)
     task_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     patch_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     exploit_payload: Mapped[str | None] = mapped_column(Text, nullable=True)

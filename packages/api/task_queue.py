@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -34,6 +35,7 @@ class TrainingJob:
     language: str = "python"
     context_hint: str = ""
     max_retries: int = 3
+    use_react: bool = False
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     completed_at: float | None = None
@@ -105,7 +107,10 @@ class TaskQueue:
                 return job
             return None
         if self._memory_queue:
-            return self._memory_queue.pop(0)
+            job = self._memory_queue.pop(0)
+            job.status = JobStatus.RUNNING
+            job.started_at = time.time()
+            return job
         return None
 
     def complete(self, job: TrainingJob) -> None:
@@ -176,3 +181,40 @@ class TaskQueue:
             key=lambda j: j.created_at,
             reverse=True,
         )[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Shared singleton — one queue per process, built from settings
+# ---------------------------------------------------------------------------
+
+_queue: TaskQueue | None = None
+_queue_lock = threading.Lock()
+
+
+def get_task_queue() -> TaskQueue:
+    """Return the process-wide task queue.
+
+    Uses ``REDIS_URL`` (or ``UPSTASH_REDIS_URL`` fallback) when configured so
+    the API and ``worker.py`` share state; otherwise an in-memory queue.
+    NOTE: the in-memory backend only works single-process — multi-process
+    deployments (uvicorn ``--workers`` + separate worker) require Redis.
+    """
+    global _queue
+    if _queue is None:
+        with _queue_lock:
+            if _queue is None:
+                try:
+                    from .config import get_settings
+
+                    redis_url = get_settings().resolved_redis_url or None
+                except Exception:
+                    redis_url = None
+                _queue = TaskQueue(redis_url=redis_url)
+    return _queue
+
+
+def reset_task_queue() -> None:
+    """Reset the singleton (for testing)."""
+    global _queue
+    with _queue_lock:
+        _queue = None
