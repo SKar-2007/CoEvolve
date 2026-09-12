@@ -1,7 +1,5 @@
 """SQLAlchemy ORM models for the CoEvolve Sandbox API."""
 
-from __future__ import annotations
-
 import uuid
 from datetime import datetime, timezone
 

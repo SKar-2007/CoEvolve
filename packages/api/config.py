@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     gemini_api_key: str = ""
     huggingface_api_key: str = ""
+    modelscope_api_key: str = ""
 
     log_level: str = "INFO"
 

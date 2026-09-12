@@ -35,6 +35,7 @@ class TestResolveProvider:
         s.huggingface_api_key = ""
         s.openrouter_api_key = ""
         s.gemini_api_key = ""
+        s.modelscope_api_key = ""
         provider, key, _model = resolve_llm_provider(s)
         assert provider == "mock"
         assert key is None

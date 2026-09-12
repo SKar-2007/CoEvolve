@@ -27,6 +27,7 @@ class TestBuildClient:
             ("anthropic", "ANTHROPIC_API_KEY"),
             ("openai", "OPENAI_API_KEY"),
             ("groq", "GROQ_API_KEY"),
+            ("modelscope", "MODELSCOPE_API_KEY"),
         ]:
             if os.getenv(env):
                 continue

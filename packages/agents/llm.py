@@ -146,6 +146,41 @@ class OpenRouterClient(OpenAIClient):
         )
 
 
+class ModelscopeClient(OpenAIClient):
+    """Modelscope (DashScope) OpenAI-compatible API for Qwen models."""
+
+    def __init__(self, model: str, api_key: str | None = None):
+        super().__init__(model=model, api_key=api_key or os.getenv("MODELSCOPE_API_KEY"))
+        if not self._api_key:
+            raise LLMError("MODELSCOPE_API_KEY not set")
+        self._base_url = "https://api-inference.modelscope.cn/v1"
+
+    def generate(self, system, user, temperature=0.7, max_tokens=4096):
+        try:
+            from openai import OpenAI  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise LLMError("openai SDK not installed") from exc
+        client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        resp = client.chat.completions.create(
+            model=self.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        choice = resp.choices[0].message
+        return LLMResponse(
+            text=choice.content or "",
+            provider="modelscope",
+            model=self.model,
+            prompt_tokens=resp.usage.prompt_tokens,
+            completion_tokens=resp.usage.completion_tokens,
+            raw=resp.model_dump(),
+        )
+
+
 class GroqClient(LLMClient):
     """Groq LPU inference client."""
 
@@ -365,6 +400,8 @@ def build_client(provider: str, model: str, api_key: str | None = None) -> LLMCl
         return OpenAIClient(model, api_key)
     if provider in {"openrouter", "deepseek"}:
         return OpenRouterClient(model, api_key)
+    if provider in {"modelscope", "dashscope", "qwen"}:
+        return ModelscopeClient(model, api_key)
     if provider == "groq":
         return GroqClient(model, api_key)
     if provider == "gemini":

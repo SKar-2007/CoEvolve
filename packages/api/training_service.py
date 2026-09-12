@@ -26,6 +26,8 @@ def resolve_llm_provider(settings: Settings) -> tuple[str, str | None, str]:
         return "openrouter", settings.openrouter_api_key, settings.llm_model
     if settings.gemini_api_key:
         return "gemini", settings.gemini_api_key, settings.llm_model
+    if settings.modelscope_api_key:
+        return "modelscope", settings.modelscope_api_key, settings.llm_model
     return "mock", None, settings.llm_model
 
 
