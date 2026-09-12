@@ -141,8 +141,8 @@ def create_xss_app() -> Flask:
         # VULNERABLE: unsanitized template rendering
         return render_template_string(f"<h1>Hello {name}!</h1>")
 
-    @app.route("/search")
-    def search():
+    @app.route("/xss")
+    def xss_search():
         q = request.args.get("q", "")
         # VULNERABLE: reflected XSS
         return f"<p>Search results for: {q}</p>"
