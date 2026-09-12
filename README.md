@@ -177,6 +177,57 @@ make test
 | GET | `/training/jobs` | List training jobs |
 | GET | `/training/jobs/{id}` | Get job status |
 
+### Usage Examples
+
+```python
+import httpx
+
+# Create an episode
+resp = httpx.post("http://localhost:8000/episodes", json={
+    "vulnerability_classes": ["SQLi"],
+    "max_duration_minutes": 15,
+})
+episode = resp.json()
+
+# Run a training episode (synchronous)
+resp = httpx.post("http://localhost:8000/training/run", json={
+    "vulnerability_class": "SQLi",
+    "language": "python",
+})
+result = resp.json()
+print(f"Outcome: {result['judge_outcome']}, Duration: {result['duration_s']:.1f}s")
+
+# Check Elo ratings
+resp = httpx.get("http://localhost:8000/elo")
+print(resp.json())  # {"attacker": 1500.0, "developer": 1500.0}
+
+# List security rules
+resp = httpx.get("http://localhost:8000/rules")
+for rule in resp.json():
+    print(f"Rule: {rule['rule_text'][:60]}...")
+```
+
+### Programmatic Usage
+
+```python
+from packages.agents.training_loop import TrainingLoop
+from packages.agents.llm import LLMClient
+
+# Initialize with your LLM provider
+client = LLMClient(provider="anthropic", model="claude-sonnet-4-5")
+loop = TrainingLoop(llm_client=client)
+
+# Run a single episode
+result = loop.run_episode(vulnerability_class="SQLi")
+print(f"Outcome: {result.verdict.outcome}")
+print(f"Rule: {result.distilled_rule}")
+
+# Run multiple episodes
+for i in range(10):
+    result = loop.run_episode(vulnerability_class="XSS")
+    print(f"Episode {i+1}: outcome={result.verdict.outcome}")
+```
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -336,6 +387,8 @@ DEPLOY.md                  # Full deployment guide
 | [threat_model.md](threat_model.md) | STRIDE threat analysis and attack trees |
 | [vulnerability_taxonomy.md](vulnerability_taxonomy.md) | 25+ target vulnerability classes |
 | [roadmap.md](roadmap.md) | Long-term strategic milestones |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines and code standards |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [DEPLOY.md](DEPLOY.md) | Production deployment guide |
 
 ## License
