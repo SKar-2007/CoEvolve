@@ -1,5 +1,6 @@
 {
   "annotations": { "list": [] },
+  "description": "CoEvolve security sandbox monitoring dashboard — tracks episodes, ELO ratings, exploit detection, LLM latency, and sandbox container health.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,11 +8,13 @@
   "panels": [
     {
       "title": "Episodes Completed",
+      "description": "Total number of adversarial training episodes completed.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "coevolve_episodes_completed_total",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "coevolve_episodes_total",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -30,11 +33,13 @@
     },
     {
       "title": "Secure Rate",
+      "description": "Proportion of episodes where the defender successfully neutralized the attack.",
       "type": "gauge",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "targets": [
         {
-          "expr": "coevolve_secure_rate",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "1 - (rate(coevolve_vulnerabilities_detected_total[5m]) / rate(coevolve_episodes_total[5m]))",
           "legendFormat": "Rate",
           "refId": "A"
         }
@@ -56,11 +61,13 @@
     },
     {
       "title": "Attacker ELO",
+      "description": "Current ELO rating of the attacker agent.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "coevolve_elo_attacker",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "coevolve_attacker_elo",
           "legendFormat": "Attacker",
           "refId": "A"
         }
@@ -68,11 +75,13 @@
     },
     {
       "title": "Developer ELO",
+      "description": "Current ELO rating of the developer (defender) agent.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
       "targets": [
         {
-          "expr": "coevolve_elo_developer",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "coevolve_developer_elo",
           "legendFormat": "Developer",
           "refId": "A"
         }
@@ -80,11 +89,13 @@
     },
     {
       "title": "Distilled Rules",
+      "description": "Number of security rules distilled from training episodes.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
       "targets": [
         {
-          "expr": "coevolve_rules_distilled_total",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "coevolve_rules_distilled",
           "legendFormat": "Rules",
           "refId": "A"
         }
@@ -92,16 +103,19 @@
     },
     {
       "title": "Episode Outcomes Over Time",
+      "description": "Rate of completed episodes and discovered exploits over time.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "targets": [
         {
-          "expr": "rate(coevolve_episodes_completed_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(coevolve_episodes_total[5m])",
           "legendFormat": "Episodes/sec",
           "refId": "A"
         },
         {
-          "expr": "rate(coevolve_exploits_found_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(coevolve_vulnerabilities_detected_total[5m])",
           "legendFormat": "Exploits/sec",
           "refId": "B"
         }
@@ -109,23 +123,25 @@
     },
     {
       "title": "LLM Latency (p50/p95/p99)",
+      "description": "End-to-end LLM inference latency percentiles.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "targets": [
         {
-          "expr": "coevolve_llm_latency_seconds_bucket",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.5, rate(coevolve_llm_latency_seconds_bucket[5m]))",
           "legendFormat": "p50",
-          "refId": "A",
-          "legendFormat": "{{le}}",
-          "histogram_quantile": 0.5
+          "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, coevolve_llm_latency_seconds_bucket)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(coevolve_llm_latency_seconds_bucket[5m]))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, coevolve_llm_latency_seconds_bucket)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, rate(coevolve_llm_latency_seconds_bucket[5m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -133,11 +149,13 @@
     },
     {
       "title": "Sandbox Container Status",
+      "description": "Active sandbox containers and their resource usage.",
       "type": "table",
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
       "targets": [
         {
-          "expr": "coevolve_sandbox_containers_active",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "coevolve_docker_containers_running",
           "legendFormat": "Active",
           "refId": "A",
           "format": "table",
