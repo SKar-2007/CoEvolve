@@ -92,7 +92,7 @@ automatically matches task difficulty to developer capability.
 
 | Component | Description |
 |-----------|-------------|
-| **FastAPI API** | 19 REST endpoints for episodes, prompts, rules, Elo, training, jobs, export/import |
+| **FastAPI API** | 22 REST endpoints for episodes, prompts, rules, Elo, training, jobs, export/import, auth |
 | **Redis Task Queue** | Async training jobs with in-memory fallback |
 | **Job Worker** | Background worker that processes async training jobs |
 | **Docker Sandbox** | 7-layer container isolation with seccomp profiles |
@@ -101,6 +101,9 @@ automatically matches task difficulty to developer capability.
 | **Cost Tracking** | Per-call token counting with provider-specific pricing |
 | **LLM Caching** | LRU cache for deterministic calls (temperature=0) |
 | **Dashboard** | Real-time metrics dashboard (Elo trends, win rates, rule growth) |
+| **Rate Limiting** | Sliding window per key/IP with tier-based limits |
+| **API Key Auth** | `X-API-Key` header or `?api_key=` query param authentication |
+| **Key Management** | Create, list, disable API keys (admin only) |
 
 ### LLM Support
 
@@ -195,47 +198,67 @@ make test
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/metrics` | Episode/elo/rules metrics |
-| GET | `/dashboard` | Metrics dashboard (HTML) |
-| POST | `/episodes` | Create episode |
-| GET | `/episodes` | List episodes |
-| GET | `/episodes/{id}` | Get episode |
-| POST | `/episodes/{id}/stop` | Stop episode |
-| GET | `/elo` | Current Elo ratings |
-| GET | `/elo/history` | Elo rating history |
-| GET | `/prompts/current` | Current prompt version |
-| GET | `/prompts/history` | Prompt version history |
-| GET | `/prompts/diff/{v1}/{v2}` | Diff between versions |
-| GET | `/rules` | List security rules |
-| GET | `/rules/{id}` | Get specific rule |
-| POST | `/rules/export` | Export rules as JSON package |
-| POST | `/rules/import` | Import rules from JSON package |
-| POST | `/training/run` | Run training episode (sync) |
-| POST | `/training/async` | Enqueue training episode (async) |
-| GET | `/training/jobs` | List training jobs |
-| GET | `/training/jobs/{id}` | Get job status |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/health` | — | Health check |
+| GET | `/metrics` | — | Episode/elo/rules metrics |
+| GET | `/dashboard` | — | Metrics dashboard (HTML) |
+| POST | `/episodes` | standard | Create episode |
+| GET | `/episodes` | standard | List episodes |
+| GET | `/episodes/{id}` | standard | Get episode |
+| POST | `/episodes/{id}/stop` | standard | Stop episode |
+| GET | `/elo` | standard | Current Elo ratings |
+| GET | `/elo/history` | standard | Elo rating history |
+| GET | `/prompts/current` | standard | Current prompt version |
+| GET | `/prompts/history` | standard | Prompt version history |
+| GET | `/prompts/diff/{v1}/{v2}` | standard | Diff between versions |
+| GET | `/rules` | standard | List security rules |
+| GET | `/rules/{id}` | standard | Get specific rule |
+| POST | `/rules/export` | standard | Export rules as JSON package |
+| POST | `/rules/import` | standard | Import rules from JSON package |
+| POST | `/training/run` | standard | Run training episode (sync) |
+| POST | `/training/async` | standard | Enqueue training episode (async) |
+| GET | `/training/jobs` | standard | List training jobs |
+| GET | `/training/jobs/{id}` | standard | Get job status |
+| POST | `/auth/keys` | admin | Create API key |
+| GET | `/auth/keys` | admin | List API keys |
+| DELETE | `/auth/keys/{hash}` | admin | Disable API key |
+
+### Rate Limits
+
+| Tier | Requests/min | Requests/hour | How to authenticate |
+|------|-------------|---------------|---------------------|
+| **Public** | 10 | 100 | No API key (uses client IP) |
+| **Standard** | 60 | 1,000 | `X-API-Key` header |
+| **Admin** | 300 | 10,000 | `X-API-Key` header (admin key) |
+
+All responses include rate limit headers:
+- `X-RateLimit-Limit` — Max requests per window
+- `X-RateLimit-Remaining` — Requests remaining
+- `X-RateLimit-Reset` — Unix timestamp when window resets
+- `Retry-After` — Seconds until retry (only on 429)
 
 ### Usage Examples
 
 ```python
 import httpx
 
+API_KEY = "cov_your_api_key_here"
+headers = {"X-API-Key": API_KEY}
+
 # Run a training episode (synchronous)
 resp = httpx.post("http://localhost:8000/training/run", json={
     "vulnerability_class": "SQLi",
     "language": "python",
     "use_react": True,  # Use ReAct tool-use developer
-})
+}, headers=headers)
 result = resp.json()
 print(f"Outcome: {result['judge_outcome']}, Duration: {result['duration_s']:.1f}s")
 
 # Enqueue async training job
 resp = httpx.post("http://localhost:8000/training/async", json={
     "vulnerability_class": "XSS",
-})
+}, headers=headers)
 job = resp.json()
 print(f"Job {job['job_id']} enqueued")
 
@@ -243,7 +266,7 @@ print(f"Job {job['job_id']} enqueued")
 resp = httpx.post("http://localhost:8000/rules/export", json={
     "name": "my-rules",
     "version": "1.0.0",
-})
+}, headers=headers)
 package = resp.json()
 print(f"Exported {package['rules_count']} rules")
 
@@ -303,21 +326,23 @@ save_package(pkg, Path("rules.json"))
 ## Testing
 
 ```
-137 tests passing (6 Docker tests require daemon)
-├── tests/unit/           # 54 unit tests
+162 tests passing (6 Docker tests require daemon)
+├── tests/unit/           # 67 unit tests
 │   ├── test_elo.py              # Elo calculator + difficulty tiers
 │   ├── test_judge.py            # Judge verdict + DAST
 │   ├── test_history.py          # Rating history tracker
 │   ├── test_dedupe.py           # Semantic deduplication
 │   ├── test_regression_guard.py # Regression detection
 │   ├── test_telemetry.py        # Prometheus metrics
-│   └── test_portability.py      # Rule export/import (10 tests)
-├── tests/integration/    # 83 integration tests
+│   ├── test_portability.py      # Rule export/import (10 tests)
+│   └── test_auth.py             # API auth + rate limiting (13 tests)
+├── tests/integration/    # 95 integration tests
 │   ├── test_agents_pipeline.py     # Full attacker→developer→judge pipeline
-│   ├── test_api_crud.py            # All 19 API endpoints
+│   ├── test_api_crud.py            # All 22 API endpoints
 │   ├── test_evolution.py           # Prompt store versioning
 │   ├── test_sandbox.py             # Sandbox config + validation
-│   └── test_sandbox_lifecycle.py   # Container lifecycle (29 tests)
+│   ├── test_sandbox_lifecycle.py   # Container lifecycle (29 tests)
+│   └── test_e2e_training.py        # Full co-evolutionary cycle (12 tests)
 └── Makefile targets: test, lint, typecheck
 ```
 
@@ -415,8 +440,9 @@ See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, tro
 
 ```
 packages/
-├── api/                # FastAPI REST API (19 endpoints)
+├── api/                # FastAPI REST API (22 endpoints)
 │   ├── main.py             # All API routes
+│   ├── auth.py             # API key auth + rate limiting
 │   ├── models.py           # SQLAlchemy ORM models
 │   ├── schemas.py          # Pydantic request/response schemas
 │   ├── config.py           # pydantic-settings configuration
