@@ -268,11 +268,13 @@ class PromptStore:
         for line in raw.splitlines():
             parts = line.split("|", 2)
             if len(parts) == 3:
-                commits.append({
-                    "hash": parts[0],
-                    "message": parts[1],
-                    "date": parts[2],
-                })
+                commits.append(
+                    {
+                        "hash": parts[0],
+                        "message": parts[1],
+                        "date": parts[2],
+                    }
+                )
         return commits
 
     def git_diff(self, v1: int, v2: int) -> str:

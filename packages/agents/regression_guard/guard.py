@@ -25,9 +25,7 @@ class HistoricalArchive:
 
     def add(self, task: dict[str, Any], outcome: int, prompt_version: int | None = None) -> None:
         task_id = task.get("task_id") or self._hash(task)
-        self._tasks[task_id] = TaskRecord(
-            task=task, outcome=outcome, prompt_version=prompt_version
-        )
+        self._tasks[task_id] = TaskRecord(task=task, outcome=outcome, prompt_version=prompt_version)
 
     def passing_tasks(self) -> list[TaskRecord]:
         return [t for t in self._tasks.values() if t.outcome == 0]

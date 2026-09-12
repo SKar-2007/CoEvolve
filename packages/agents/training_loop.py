@@ -35,7 +35,9 @@ except ImportError:  # pragma: no cover
     pass
 
 
-def _safe_record_episode(outcome: int, vuln_class: str | None = None, duration_s: float = 0) -> None:
+def _safe_record_episode(
+    outcome: int, vuln_class: str | None = None, duration_s: float = 0
+) -> None:
     if _telemetry_available:
         record_episode(outcome, vuln_class, duration_s)  # type: ignore[misc]
 
@@ -227,7 +229,9 @@ class TrainingLoop:
                         self.prompt_version += 1
                         trace.prompt_version = self.prompt_version
                         _safe_set_rule_count(len(self.prompt_store.rules()))
-                        logger.info("[episode=%s] Rule accepted: %s", episode_id, rule.rule_text[:80])
+                        logger.info(
+                            "[episode=%s] Rule accepted: %s", episode_id, rule.rule_text[:80]
+                        )
                     else:
                         logger.info("[episode=%s] Rule rejected (regression detected)", episode_id)
             else:

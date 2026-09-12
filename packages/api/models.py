@@ -37,8 +37,15 @@ class EpisodeRecord(Base):
         return self.id
 
     status: Mapped[str] = mapped_column(
-        Enum("pending", "creating", "executing", "evaluating", "completed", "failed",
-             name="episode_status"),
+        Enum(
+            "pending",
+            "creating",
+            "executing",
+            "evaluating",
+            "completed",
+            "failed",
+            name="episode_status",
+        ),
         default="pending",
     )
     vulnerability_class: Mapped[str | None] = mapped_column(String(64), nullable=True)

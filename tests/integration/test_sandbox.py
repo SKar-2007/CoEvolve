@@ -94,33 +94,38 @@ class TestCommandValidation:
 class TestSeccompValidation:
     def test_valid_profile(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({
-                "defaultAction": "SCMP_ACT_ERRNO",
-                "syscalls": [
-                    {"names": ["read", "write"], "action": "SCMP_ACT_ALLOW"}
-                ],
-            }, f)
+            json.dump(
+                {
+                    "defaultAction": "SCMP_ACT_ERRNO",
+                    "syscalls": [{"names": ["read", "write"], "action": "SCMP_ACT_ALLOW"}],
+                },
+                f,
+            )
             f.flush()
             assert validate_seccomp(f.name) is True
 
     def test_dangerous_syscall_rejected(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({
-                "defaultAction": "SCMP_ACT_ERRNO",
-                "syscalls": [
-                    {"names": ["read", "ptrace"], "action": "SCMP_ACT_ALLOW"}
-                ],
-            }, f)
+            json.dump(
+                {
+                    "defaultAction": "SCMP_ACT_ERRNO",
+                    "syscalls": [{"names": ["read", "ptrace"], "action": "SCMP_ACT_ALLOW"}],
+                },
+                f,
+            )
             f.flush()
             with pytest.raises(ValueError, match="Dangerous syscalls allowed"):
                 validate_seccomp(f.name)
 
     def test_wrong_default_action(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({
-                "defaultAction": "SCMP_ACT_ALLOW",
-                "syscalls": [],
-            }, f)
+            json.dump(
+                {
+                    "defaultAction": "SCMP_ACT_ALLOW",
+                    "syscalls": [],
+                },
+                f,
+            )
             f.flush()
             with pytest.raises(AssertionError):
                 validate_seccomp(f.name)

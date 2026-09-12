@@ -13,7 +13,12 @@ from packages.evolution.dedupe import (
 
 class TestJaccardDedup:
     def test_exact_duplicate(self) -> None:
-        assert _jaccard_duplicate("always use parameterized queries", ["always use parameterized queries"]) is True
+        assert (
+            _jaccard_duplicate(
+                "always use parameterized queries", ["always use parameterized queries"]
+            )
+            is True
+        )
 
     def test_similar_not_duplicate(self) -> None:
         assert _jaccard_duplicate("always sanitize input", ["never trust user input"]) is False
@@ -23,7 +28,12 @@ class TestJaccardDedup:
 
     def test_threshold(self) -> None:
         # Exact match should always be detected
-        assert _jaccard_duplicate("always sanitize user input", ["always sanitize user input"], threshold=0.9) is True
+        assert (
+            _jaccard_duplicate(
+                "always sanitize user input", ["always sanitize user input"], threshold=0.9
+            )
+            is True
+        )
 
 
 class TestIsDuplicate:
@@ -31,7 +41,10 @@ class TestIsDuplicate:
         assert is_duplicate("rule", []) is False
 
     def test_with_existing(self) -> None:
-        assert is_duplicate("always use parameterized queries", ["always use parameterized queries"]) is True
+        assert (
+            is_duplicate("always use parameterized queries", ["always use parameterized queries"])
+            is True
+        )
 
 
 class TestTokens:

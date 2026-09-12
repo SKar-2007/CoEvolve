@@ -51,10 +51,13 @@ class TestHealth:
 
 class TestEpisodes:
     def test_create_episode(self, client):
-        resp = client.post("/episodes", json={
-            "vulnerability_classes": ["SQLi"],
-            "max_duration_minutes": 15,
-        })
+        resp = client.post(
+            "/episodes",
+            json={
+                "vulnerability_classes": ["SQLi"],
+                "max_duration_minutes": 15,
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["status"] == "pending"

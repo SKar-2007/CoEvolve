@@ -47,9 +47,7 @@ class SandboxManager:
             try:
                 import docker  # type: ignore[import-not-found]
             except ImportError as exc:  # pragma: no cover
-                raise SandboxError(
-                    "Docker SDK not installed. Run `pip install docker`."
-                ) from exc
+                raise SandboxError("Docker SDK not installed. Run `pip install docker`.") from exc
             self._client = docker.from_env()
         return self._client
 
@@ -75,7 +73,9 @@ class SandboxManager:
             res = container.exec_run(
                 ["/bin/sh", "-c", command],
                 timeout=timeout,
-                stdout=True, stderr=True, demux=False,
+                stdout=True,
+                stderr=True,
+                demux=False,
             )
             output = res.output
             if isinstance(output, bytes):
@@ -169,9 +169,19 @@ def validate_seccomp(profile_path) -> bool:
         if group["action"] == "SCMP_ACT_ALLOW":
             allowed.update(group["names"])
     dangerous = {
-        "ptrace", "mount", "umount2", "kexec_load", "init_module",
-        "delete_module", "bpf", "unshare", "setns", "keyctl",
-        "add_key", "request_key", "userfaultfd",
+        "ptrace",
+        "mount",
+        "umount2",
+        "kexec_load",
+        "init_module",
+        "delete_module",
+        "bpf",
+        "unshare",
+        "setns",
+        "keyctl",
+        "add_key",
+        "request_key",
+        "userfaultfd",
     }
     overlap = dangerous.intersection(allowed)
     if overlap:

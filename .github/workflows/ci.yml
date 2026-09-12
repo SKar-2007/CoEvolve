@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install mypy
+      - run: pip install mypy pydantic pydantic-settings sqlalchemy
       - run: mypy packages/ --ignore-missing-imports
 
   unit-tests:
@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -e "packages/*[dev]" 2>/dev/null || pip install pytest pytest-asyncio httpx pydantic sentence-transformers
+      - run: pip install -r requirements-ci.txt
       - run: python -m pytest tests/unit/ -v --tb=short -q
 
   integration-tests:
@@ -55,9 +55,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install pytest pytest-asyncio httpx pydantic docker
-      - run: python -m pytest tests/integration/ -v --tb=short -q -m "not integration" || true
-      - run: python -m pytest tests/integration/ -v --tb=short -q
+      - run: pip install -r requirements-ci.txt
+      - run: python -m pytest tests/integration/ -v --tb=short -q -m "not integration"
 
   coverage:
     name: Coverage Report
@@ -69,7 +68,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install pytest pytest-cov httpx pydantic
+      - run: pip install -r requirements-ci.txt
       - run: python -m pytest tests/ --cov=packages --cov-report=term-missing --cov-report=xml -q
       - uses: codecov/codecov-action@v4
         with:

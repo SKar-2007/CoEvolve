@@ -70,12 +70,7 @@ def health() -> dict[str, str]:
 @app.get("/metrics", response_model=MetricsSnapshot)
 def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
     total = db.query(func.count(EpisodeRecord.id)).scalar() or 0
-    secure = (
-        db.query(func.count(EpisodeRecord.id))
-        .filter(EpisodeRecord.outcome == 0)
-        .scalar()
-        or 0
-    )
+    secure = db.query(func.count(EpisodeRecord.id)).filter(EpisodeRecord.outcome == 0).scalar() or 0
     rules_count = db.query(func.count(RuleRecord.id)).scalar() or 0
     elo = db.get(EloRecord, "global")
     return MetricsSnapshot(
@@ -142,11 +137,7 @@ def elo(db: Session = Depends(get_db)) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 @app.get("/prompts/current", response_model=PromptVersionRead)
 def current_prompt(db: Session = Depends(get_db)) -> PromptVersionRead:
-    record = (
-        db.query(PromptRecord)
-        .order_by(PromptRecord.version.desc())
-        .first()
-    )
+    record = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
     if not record:
         raise HTTPException(404, "No prompts found")
     return PromptVersionRead(
@@ -161,12 +152,7 @@ def prompt_history(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> list[PromptVersionRead]:
-    records = (
-        db.query(PromptRecord)
-        .order_by(PromptRecord.version.desc())
-        .limit(limit)
-        .all()
-    )
+    records = db.query(PromptRecord).order_by(PromptRecord.version.desc()).limit(limit).all()
     return [
         PromptVersionRead(
             version=r.version,
@@ -272,9 +258,7 @@ def run_training_episode(
     )
 
     # Get current prompt version
-    latest_prompt = (
-        db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-    )
+    latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
     prompt_version = latest_prompt.version if latest_prompt else 0
 
     # Build LLM client
@@ -315,25 +299,29 @@ def run_training_episode(
         elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
         elo_record.episodes_played += 1
     else:
-        db.add(EloRecord(
-            id="global",
-            attacker_rating=trace.elo_after.get("attacker", 1500.0),
-            developer_rating=trace.elo_after.get("developer", 1500.0),
-            episodes_played=1,
-        ))
+        db.add(
+            EloRecord(
+                id="global",
+                attacker_rating=trace.elo_after.get("attacker", 1500.0),
+                developer_rating=trace.elo_after.get("developer", 1500.0),
+                episodes_played=1,
+            )
+        )
 
     # Record distilled rule if any
     if trace.distilled_rule and trace.regression_passed:
         rule = trace.distilled_rule
-        db.add(RuleRecord(
-            rule_text=rule.rule_text,
-            vulnerability_class=rule.vulnerability_class,
-            source_pattern=rule.source_pattern,
-            recommended_fix=rule.recommended_fix,
-            source_trace_id=rule.source_trace_id,
-            prompt_version=trace.prompt_version,
-            approved=True,
-        ))
+        db.add(
+            RuleRecord(
+                rule_text=rule.rule_text,
+                vulnerability_class=rule.vulnerability_class,
+                source_pattern=rule.source_pattern,
+                recommended_fix=rule.recommended_fix,
+                source_trace_id=rule.source_trace_id,
+                prompt_version=trace.prompt_version,
+                approved=True,
+            )
+        )
 
     db.commit()
 

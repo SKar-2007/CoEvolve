@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from packages.telemetry.exporters.metrics import (
-    EPISODES_TOTAL,
     ATTACKER_ELO,
     DEVELOPER_ELO,
+    EPISODES_TOTAL,
     RULES_COUNT,
     record_episode,
     set_rule_count,

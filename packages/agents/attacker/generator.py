@@ -149,9 +149,7 @@ class AttackerAgent:
         if not 1 <= difficulty_tier <= 10:
             raise ValueError("difficulty_tier must be in 1..10")
 
-        user = self._build_user_prompt(
-            vulnerability_class, difficulty_tier, context_hint, language
-        )
+        user = self._build_user_prompt(vulnerability_class, difficulty_tier, context_hint, language)
         resp = self.client.generate(
             system=ATTACKER_SYSTEM_PROMPT,
             user=user,
@@ -201,10 +199,12 @@ class AttackerAgent:
             if isinstance(f, str):
                 normalized.append(ContextFile(path=f, snippet=""))
             elif isinstance(f, dict):
-                normalized.append(ContextFile(
-                    path=f.get("path", "unknown"),
-                    snippet=f.get("snippet", ""),
-                ))
+                normalized.append(
+                    ContextFile(
+                        path=f.get("path", "unknown"),
+                        snippet=f.get("snippet", ""),
+                    )
+                )
         data["context_files"] = normalized
 
         return GeneratedTask(**data)

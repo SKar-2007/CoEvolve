@@ -67,9 +67,7 @@ class DeveloperAgent:
         """Return the developer's patch text for a task."""
         system = self.build_system_prompt(rules)
         user = self._format_task(task)
-        return self.client.generate(
-            system=system, user=user, temperature=self.temperature
-        ).text
+        return self.client.generate(system=system, user=user, temperature=self.temperature).text
 
     @staticmethod
     def _format_task(task: dict[str, Any]) -> str:

@@ -39,10 +39,7 @@ class DistilledRule:
     @property
     def is_valid(self) -> bool:
         text = self.rule_text.strip().lower()
-        return (
-            len(self.rule_text.strip()) > 10
-            and text.startswith(("always", "never"))
-        )
+        return len(self.rule_text.strip()) > 10 and text.startswith(("always", "never"))
 
 
 class DistillerAgent:

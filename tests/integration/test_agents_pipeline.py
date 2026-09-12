@@ -46,6 +46,7 @@ class MockLLMClient(LLMClient):
     @staticmethod
     def _default_task() -> str:
         import json as _json
+
         task = {
             "task_description": "Fix the user lookup endpoint to handle special characters in usernames",
             "context_files": [
@@ -67,6 +68,7 @@ class MockLLMClient(LLMClient):
         """Extract vulnerability class from user prompt and generate matching task."""
         import json as _json
         import re as _re
+
         match = _re.search(r"vulnerability class:\s*(\w+)", user_prompt)
         vuln_class = match.group(1) if match else "SQLi"
         task = {
@@ -92,7 +94,7 @@ class MockLLMClient(LLMClient):
             "+++ b/src/api/users.py\n"
             "@@ -1,3 +1,3 @@\n"
             " def get_user(username):\n"
-            '-    query = f"SELECT * FROM users WHERE name = \'{username}\'"\n'
+            "-    query = f\"SELECT * FROM users WHERE name = '{username}'\"\n"
             '+    query = "SELECT * FROM users WHERE name = %s"\n'
             "-    return db.execute(query)\n"
             "+    return db.execute(query, (username,))"
@@ -174,10 +176,12 @@ class TestDeveloperAgent:
     def test_execute_returns_patch(self):
         client = MockLLMClient()
         agent = DeveloperAgent(client)
-        patch = agent.execute({
-            "task_description": "Fix SQL injection in user lookup",
-            "context_files": ["src/api/users.py"],
-        })
+        patch = agent.execute(
+            {
+                "task_description": "Fix SQL injection in user lookup",
+                "context_files": ["src/api/users.py"],
+            }
+        )
         assert isinstance(patch, str)
         assert len(patch) > 0
 
@@ -214,9 +218,11 @@ class TestDistillerAgent:
         assert rule.source_trace_id == "trace-1"
 
     def test_distill_with_custom_response(self):
-        custom = MockLLMClient(responses={
-            "distiller": '{"rule_text": "NEVER use eval() on user input", "vulnerability_class": "CommandInjection", "source_pattern": "eval called with user input", "recommended_fix": "Use ast.literal_eval"}'
-        })
+        custom = MockLLMClient(
+            responses={
+                "distiller": '{"rule_text": "NEVER use eval() on user input", "vulnerability_class": "CommandInjection", "source_pattern": "eval called with user input", "recommended_fix": "Use ast.literal_eval"}'
+            }
+        )
         agent = DistillerAgent(custom)
         rule = agent.distill("eval() vulnerability trace")
         assert "eval" in rule.rule_text

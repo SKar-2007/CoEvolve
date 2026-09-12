@@ -245,7 +245,9 @@ class GitCommitTool:
     def execute(self, **kwargs: Any) -> str:
         message = kwargs.get("message", "auto-commit")
         try:
-            subprocess.run("git add -A", shell=True, cwd=str(self.workspace), check=True, timeout=10)
+            subprocess.run(
+                "git add -A", shell=True, cwd=str(self.workspace), check=True, timeout=10
+            )
             result = subprocess.run(
                 f"git commit -m {json.dumps(message)}",
                 shell=True,
@@ -342,9 +344,7 @@ class ReActDeveloperAgent:
 
     def build_system_prompt(self, rules: list[str] | None = None) -> str:
         """Compose the system prompt with tool descriptions and evolved rules."""
-        tool_descs = "\n".join(
-            f"- {name}: {tool.description}" for name, tool in self.tools.items()
-        )
+        tool_descs = "\n".join(f"- {name}: {tool.description}" for name, tool in self.tools.items())
         prompt = self.base_prompt.format(tool_descriptions=tool_descs)
         if rules:
             prompt += "\n\nEVOLVED SECURITY RULES (must be followed):\n"
@@ -383,10 +383,12 @@ class ReActDeveloperAgent:
 
             # Feed result back
             messages.append({"role": "assistant", "content": text})
-            messages.append({
-                "role": "user",
-                "content": f"Tool Result ({tool_call.tool_name}):\n{result.output}",
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Tool Result ({tool_call.tool_name}):\n{result.output}",
+                }
+            )
 
         # Exhausted max steps — return best effort
         logger.warning("Developer agent exhausted %d steps", self.max_steps)

@@ -50,9 +50,7 @@ class PayloadLibrary:
         if self.path.exists():
             raw = json.loads(self.path.read_text())
             for class_id, items in raw.items():
-                self._payloads[class_id] = [
-                    ExploitPayload(class_id=class_id, **it) for it in items
-                ]
+                self._payloads[class_id] = [ExploitPayload(class_id=class_id, **it) for it in items]
 
     def classes(self) -> list[str]:
         return sorted(self._payloads)
@@ -122,8 +120,7 @@ class StaticPayloadLibrary(PayloadLibrary):
         for class_id, items in self.STATIC_PAYLOADS.items():
             if class_id not in self._payloads:
                 self._payloads[class_id] = [
-                    ExploitPayload(class_id=class_id, payload=p, description=d)
-                    for p, d in items
+                    ExploitPayload(class_id=class_id, payload=p, description=d) for p, d in items
                 ]
 
 

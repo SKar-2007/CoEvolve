@@ -90,14 +90,20 @@ class CostTrackingClient(LLMClient):
         self.usage.total_calls += 1
 
         cost = estimate_cost(
-            response.provider, response.model,
-            response.prompt_tokens, response.completion_tokens,
+            response.provider,
+            response.model,
+            response.prompt_tokens,
+            response.completion_tokens,
         )
         self.usage.total_cost_usd += cost
 
         # Per-provider breakdown
         if response.provider not in self.usage.by_provider:
-            self.usage.by_provider[response.provider] = {"prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0}
+            self.usage.by_provider[response.provider] = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0,
+            }
         pp = self.usage.by_provider[response.provider]
         pp["prompt_tokens"] = pp.get("prompt_tokens", 0) + response.prompt_tokens  # type: ignore[assignment]
         pp["completion_tokens"] = pp.get("completion_tokens", 0) + response.completion_tokens  # type: ignore[assignment]
@@ -158,7 +164,9 @@ class CachingClient(LLMClient):
         self._misses = 0
 
     def _make_key(self, system: str, user: str, temperature: float, max_tokens: int) -> str:
-        raw = json.dumps({"s": system, "u": user, "t": temperature, "m": max_tokens}, sort_keys=True)
+        raw = json.dumps(
+            {"s": system, "u": user, "t": temperature, "m": max_tokens}, sort_keys=True
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def _get(self, key: str) -> LLMResponse | None:

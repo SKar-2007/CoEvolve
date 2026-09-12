@@ -44,7 +44,10 @@ class SASTResult:
         return len(self.findings) > 0
 
     def as_dict(self) -> dict:
-        return {"rules_matched": [f.as_dict() for f in self.findings], "total_matches": len(self.findings)}
+        return {
+            "rules_matched": [f.as_dict() for f in self.findings],
+            "total_matches": len(self.findings),
+        }
 
 
 class SemgrepScanner:

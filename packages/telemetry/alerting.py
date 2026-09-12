@@ -207,31 +207,37 @@ class AlertManager:
     ) -> dict[str, bool]:
         """Convenience: send a training episode complete notification."""
         severity = "warning" if outcome == 1 else "info"
-        return self.send(Alert(
-            title=f"Episode {episode_id} Complete",
-            message=f"{'VULNERABILITY FOUND' if outcome else 'Secure'} in {duration_s:.1f}s",
-            severity=severity,
-            metadata={
-                "episode_id": episode_id,
-                "attacker_elo": f"{attacker_elo:.0f}",
-                "developer_elo": f"{developer_elo:.0f}",
-            },
-        ))
+        return self.send(
+            Alert(
+                title=f"Episode {episode_id} Complete",
+                message=f"{'VULNERABILITY FOUND' if outcome else 'Secure'} in {duration_s:.1f}s",
+                severity=severity,
+                metadata={
+                    "episode_id": episode_id,
+                    "attacker_elo": f"{attacker_elo:.0f}",
+                    "developer_elo": f"{developer_elo:.0f}",
+                },
+            )
+        )
 
     def notify_rule_distilled(self, rule_text: str, vuln_class: str) -> dict[str, bool]:
         """Convenience: send a rule distilled notification."""
-        return self.send(Alert(
-            title="New Security Rule Distilled",
-            message=rule_text,
-            severity="info",
-            metadata={"vulnerability_class": vuln_class},
-        ))
+        return self.send(
+            Alert(
+                title="New Security Rule Distilled",
+                message=rule_text,
+                severity="info",
+                metadata={"vulnerability_class": vuln_class},
+            )
+        )
 
     def notify_error(self, error: str, context: str = "") -> dict[str, bool]:
         """Convenience: send an error notification."""
-        return self.send(Alert(
-            title="System Error",
-            message=error,
-            severity="error",
-            metadata={"context": context} if context else {},
-        ))
+        return self.send(
+            Alert(
+                title="System Error",
+                message=error,
+                severity="error",
+                metadata={"context": context} if context else {},
+            )
+        )
