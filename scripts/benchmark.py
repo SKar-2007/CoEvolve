@@ -65,7 +65,7 @@ class MockLLM:
         return Response("Action: search_code\nAction Input: {\"pattern\": \"SELECT\"}")
 
 
-def run_benchmark(episodes: int, real: bool = False) -> dict[str, Any]:
+def run_benchmark(episodes: int, real: bool = False, use_react: bool = False) -> dict[str, Any]:
     """Run N episodes and collect statistics."""
     from packages.agents.cost_tracking import CostTrackingClient
     from packages.agents.training_loop import EpisodeConfig, EpisodeTrace, TrainingLoop
@@ -91,7 +91,7 @@ def run_benchmark(episodes: int, real: bool = False) -> dict[str, Any]:
     t_start = time.time()
 
     for i in range(episodes):
-        loop = TrainingLoop(llm=tracked, elo_calculator=calculator)
+        loop = TrainingLoop(llm=tracked, elo_calculator=calculator, use_react=use_react)
         trace = loop.run_episode(config, current_ratings=(attacker_elo, developer_elo))
         traces.append(trace)
 
@@ -195,11 +195,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CoEvolve benchmark")
     parser.add_argument("--episodes", type=int, default=50, help="Number of episodes")
     parser.add_argument("--real", action="store_true", help="Use real LLM calls")
+    parser.add_argument("--react", action="store_true", help="Use ReAct tool-use developer agent")
     parser.add_argument("--output", type=str, default="", help="Save JSON report to file")
     args = parser.parse_args()
 
-    print(f"Running {args.episodes} episodes ({'real' if args.real else 'mock'} mode)...")
-    report = run_benchmark(episodes=args.episodes, real=args.real)
+    print(f"Running {args.episodes} episodes ({'real' if args.real else 'mock'} mode, {'ReAct' if args.react else 'simple'} developer)...")
+    report = run_benchmark(episodes=args.episodes, real=args.real, use_react=args.react)
     print_report(report)
 
     if args.output:

@@ -273,7 +273,7 @@ def run_training_episode(
     llm = build_client(provider)
 
     # Build and run training loop
-    loop = TrainingLoop(llm=llm, prompt_version=prompt_version)
+    loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)
     config = EpisodeConfig(
         vulnerability_class=body.vulnerability_class,
         language=body.language,

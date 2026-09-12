@@ -70,6 +70,7 @@ class TrainingRunRequest(BaseModel):
     language: str = "python"
     context_hint: str = ""
     max_retries: int = 3
+    use_react: bool = False
 
 
 class TrainingRunResponse(BaseModel):

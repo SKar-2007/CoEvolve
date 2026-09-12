@@ -15,6 +15,7 @@ from typing import Any
 
 from .attacker.generator import AttackerAgent, GeneratedTask
 from .developer.executor import DeveloperAgent
+from .developer.tools import ReActDeveloperAgent
 from .distiller.pipeline import DistilledRule, DistillerAgent
 from .llm import LLMClient
 from .regression_guard.guard import HistoricalArchive, RegressionGuard
@@ -97,10 +98,20 @@ class TrainingLoop:
         prompt_store: Any = None,
         archive: HistoricalArchive | None = None,
         prompt_version: int = 0,
+        use_react: bool = False,
+        workspace_dir: str | Path = "/tmp/coevolve_workspace",
     ) -> None:
         self.llm = llm
         self.attacker = AttackerAgent(llm)
-        self.developer = DeveloperAgent(llm)
+
+        if use_react:
+            workspace = Path(workspace_dir)
+            workspace.mkdir(parents=True, exist_ok=True)
+            self.developer: Any = ReActDeveloperAgent(llm, workspace=workspace)
+            logger.info("Using ReAct Developer Agent (tool-use enabled)")
+        else:
+            self.developer = DeveloperAgent(llm)
+
         self.distiller = DistillerAgent(llm)
 
         # Pluggable dependencies — import lazily to avoid circular imports
