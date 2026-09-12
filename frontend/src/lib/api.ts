@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://coevolve.onrender.com";
 
 export interface Episode {
   episode_id: string;
@@ -32,29 +32,6 @@ export interface Metrics {
   rules_count: number;
 }
 
-export interface TrainingRunRequest {
-  vulnerability_class?: string;
-  language?: string;
-  context_hint?: string;
-  max_retries?: number;
-  use_react?: boolean;
-}
-
-export interface TrainingRunResponse {
-  episode_id: string;
-  status: string;
-  difficulty_tier: number;
-  judge_outcome: number;
-  judge_verdict: Record<string, unknown>;
-  rule_distilled: boolean;
-  rule_text: string | null;
-  regression_passed: boolean;
-  elo_before: Record<string, number>;
-  elo_after: Record<string, number>;
-  duration_s: number;
-  error: string | null;
-}
-
 export interface SSEEvent {
   type: "start" | "agent" | "elo" | "complete" | "error";
   agent?: string;
@@ -78,7 +55,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Backend returned ${res.status}: ${body}`);
+    throw new Error(`Backend ${res.status}: ${body}`);
   }
   return res.json();
 }
@@ -90,12 +67,11 @@ export const api = {
   episode: (id: string) => apiFetch<Episode>(`/episodes/${id}`),
   rules: (limit = 50) => apiFetch<Rule[]>(`/rules?limit=${limit}`),
   elo: () => apiFetch<{ attacker: number; developer: number }>("/elo"),
-  runTraining: (req: TrainingRunRequest) =>
-    apiFetch<TrainingRunResponse>("/training/run", {
+  runTraining: (req: { vulnerability_class?: string; language?: string }) =>
+    apiFetch<{ episode_id: string; status: string; difficulty_tier: number; judge_outcome: number; judge_verdict: Record<string, unknown>; rule_distilled: boolean; rule_text: string | null; regression_passed: boolean; elo_before: Record<string, number>; elo_after: Record<string, number>; duration_s: number; error: string | null }>("/training/run", {
       method: "POST",
       body: JSON.stringify(req),
     }),
-
   streamTraining: (
     vuln: string,
     lang: string,
@@ -105,44 +81,20 @@ export const api = {
   ) => {
     const url = `${API_BASE}/training/stream?vulnerability_class=${encodeURIComponent(vuln)}&language=${encodeURIComponent(lang)}`;
     const es = new EventSource(url);
-
-    const timeout = setTimeout(() => {
-      es.close();
-      onError("Connection timed out. Is the backend running?");
-    }, 10000);
-
+    const timeout = setTimeout(() => { es.close(); onError("Timed out"); }, 10000);
     es.onopen = () => clearTimeout(timeout);
-
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data) as SSEEvent;
         onEvent(data);
-        if (data.type === "complete" || data.type === "error") {
-          es.close();
-          clearTimeout(timeout);
-          onDone();
-        }
-      } catch {
-        // ignore parse errors
-      }
+        if (data.type === "complete" || data.type === "error") { es.close(); clearTimeout(timeout); onDone(); }
+      } catch {}
     };
-    es.onerror = () => {
-      es.close();
-      clearTimeout(timeout);
-      onError("Cannot connect to backend. Make sure the API server is running.");
-    };
-    return () => {
-      es.close();
-      clearTimeout(timeout);
-    };
+    es.onerror = () => { es.close(); clearTimeout(timeout); onError("Cannot connect to backend"); };
+    return () => { es.close(); clearTimeout(timeout); };
   },
-
-  checkConnection: async (): Promise<{ ok: boolean; url: string; error?: string }> => {
-    try {
-      await apiFetch("/health");
-      return { ok: true, url: API_BASE };
-    } catch (e) {
-      return { ok: false, url: API_BASE, error: String(e) };
-    }
+  checkConnection: async (): Promise<{ ok: boolean; url: string }> => {
+    try { await apiFetch("/health"); return { ok: true, url: API_BASE }; }
+    catch { return { ok: false, url: API_BASE }; }
   },
 };
