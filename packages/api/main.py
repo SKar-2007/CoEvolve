@@ -54,6 +54,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from .auth import get_key_store
 
         get_key_store()
+        # Mirror prompt versions into the DB so /prompts/* is never stale.
+        _sync_db = get_session_factory()()
+        try:
+            _sync_prompt_records(_sync_db)
+        finally:
+            _sync_db.close()
         logger.info("Database connected successfully")
     except Exception as exc:
         # Log and continue so /health stays available; training endpoints
@@ -205,8 +211,43 @@ def list_rules(
 # ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
+def _sync_prompt_records(db: Session) -> None:
+    """Mirror PromptStore (git-backed source of truth) into PromptRecord rows.
+
+    The store auto-creates v1 on first use, so after sync at least one row
+    always exists. Idempotent — only missing versions are inserted.
+    """
+    from datetime import datetime, timezone
+
+    from ..evolution.store import PromptStore
+
+    try:
+        versions = PromptStore().history()
+    except Exception as exc:
+        logger.warning("PromptStore sync skipped: %s", exc)
+        return
+    existing = {v for (v,) in db.query(PromptRecord.version).all()}
+    for entry in versions:
+        if entry["version"] in existing:
+            continue
+        created = entry.get("created_at") or 0
+        db.add(
+            PromptRecord(
+                id=f"v{entry['version']:04d}",
+                version=entry["version"],
+                base_prompt=entry.get("base_prompt", ""),
+                rules=entry.get("rules", []),
+                commit_message=entry.get("commit_message", ""),
+                parent_version=entry.get("parent_version"),
+                created_at=datetime.fromtimestamp(created, tz=timezone.utc),
+            )
+        )
+    db.commit()
+
+
 @app.get("/prompts/current", response_model=PromptRead)
 def get_current_prompt(db: Session = Depends(get_db)) -> PromptRecord:
+    _sync_prompt_records(db)
     prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
     if not prompt:
         raise HTTPException(404, "No prompt versions found")
@@ -218,6 +259,7 @@ def get_prompt_history(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> list[PromptRecord]:
+    _sync_prompt_records(db)
     return db.query(PromptRecord).order_by(PromptRecord.version.desc()).limit(limit).all()
 
 

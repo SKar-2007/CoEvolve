@@ -74,14 +74,17 @@ class TestElo:
 
 
 class TestPrompts:
-    def test_no_prompts_initially(self, client):
+    def test_current_synced_from_store(self, client):
+        # Endpoints mirror the git-backed PromptStore (which auto-creates v1),
+        # so current always exists even with a fresh DB.
         resp = client.get("/prompts/current")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert resp.json()["version"] >= 1
 
-    def test_prompt_history_empty(self, client):
+    def test_prompt_history_synced(self, client):
         resp = client.get("/prompts/history")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert len(resp.json()) >= 1
 
 
 class TestRules:

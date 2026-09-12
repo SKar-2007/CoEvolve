@@ -62,12 +62,16 @@ class HybridJudge:
     ) -> JudgeVerdict:
         """Run both stages and return the verdict.
 
-        Stage 1 (SAST): semantic pattern matching on the patch.
+        Stage 1 (SAST): semantic pattern matching on the patch + workspace.
         Stage 2 (DAST): dynamic payload replay against the sandboxed app.
+
+        The attacker wins (j=1) if SAST finds vulnerabilities in context files
+        that the developer did NOT fix in their patch. This means the developer
+        left exploitable code untouched.
         """
         verdict = JudgeVerdict(j=0, episode_k=episode_k, structure=patch_text[:200])
 
-        # Stage 1: static analysis
+        # Stage 1: static analysis on workspace (includes context_files + patch)
         if workspace_dir and workspace_dir.exists():
             sast = self.scanner.scan_directory(workspace_dir)
         else:
@@ -77,6 +81,19 @@ class HybridJudge:
         if not sast.matched:
             verdict.structure = f"{verdict.structure} [SAST clean]"
             return verdict
+
+        # SAST found vulnerabilities. Check if they're in the developer's patch
+        # or in untouched context files. If in context files → attacker wins.
+        if workspace_dir and workspace_dir.exists():
+            for finding in sast.findings:
+                # If the finding is in a file that's NOT the patch, attacker wins
+                if "patch" not in finding.file.lower():
+                    verdict.j = 1
+                    verdict.structure = (
+                        f"{verdict.structure} [vuln in untouched file: {finding.file}]"
+                    )
+                    verdict.dast = {"success": True, "note": "SAST confirmed vuln in context file"}
+                    return verdict
 
         # Stage 2: dynamic verification — confirms exploitability, kills FPs
         try:
