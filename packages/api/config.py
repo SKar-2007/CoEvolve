@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # LLM — Groq free tier (console.groq.com)
     llm_provider: str = "groq"
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = "llama-3.1-8b-instant"
     groq_api_key: str = ""
 
     # Optional fallback providers
