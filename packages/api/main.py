@@ -18,12 +18,18 @@ from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
+    ConfigUpdateRequest,
     EloHistoryResponse,
     EpisodeRead,
+    EpisodeStopResponse,
     MetricsSnapshot,
+    PromptDiffResponse,
+    PromptRead,
+    RuleDetailRead,
     RuleRead,
     TrainingRunRequest,
     TrainingRunResponse,
+    VulnerabilityCoverage,
 )
 
 
@@ -160,6 +166,127 @@ def list_rules(
     if approved_only:
         q = q.filter(RuleRecord.approved.is_(True))
     return q.order_by(RuleRecord.created_at.desc()).limit(limit).all()
+
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+@app.get("/prompts/current", response_model=PromptRead)
+def get_current_prompt(db: Session = Depends(get_db)) -> PromptRecord:
+    prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
+    if not prompt:
+        raise HTTPException(404, "No prompt versions found")
+    return prompt
+
+
+@app.get("/prompts/history", response_model=list[PromptRead])
+def get_prompt_history(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> list[PromptRecord]:
+    return db.query(PromptRecord).order_by(PromptRecord.version.desc()).limit(limit).all()
+
+
+@app.get("/prompts/diff/{v1}/{v2}", response_model=PromptDiffResponse)
+def get_prompt_diff(v1: int, v2: int, db: Session = Depends(get_db)) -> PromptDiffResponse:
+    from ..evolution.store import PromptStore
+
+    store = PromptStore()
+    try:
+        diff = store.diff(v1, v2)
+    except KeyError:
+        raise HTTPException(404, f"Version {v1} or {v2} not found")
+    return PromptDiffResponse(
+        from_version=diff["from"],
+        to_version=diff["to"],
+        added=diff["added"],
+        removed=diff["removed"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rules — single rule
+# ---------------------------------------------------------------------------
+@app.get("/rules/{rule_id}", response_model=RuleDetailRead)
+def get_rule(rule_id: str, db: Session = Depends(get_db)) -> RuleRecord:
+    rule = db.get(RuleRecord, rule_id)
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    return rule
+
+
+# ---------------------------------------------------------------------------
+# Vulnerabilities — coverage report
+# ---------------------------------------------------------------------------
+@app.get("/vulnerabilities/coverage", response_model=list[VulnerabilityCoverage])
+def get_vulnerability_coverage(db: Session = Depends(get_db)) -> list[VulnerabilityCoverage]:
+    from sqlalchemy import case
+
+    rows = (
+        db.query(
+            EpisodeRecord.vulnerability_class,
+            func.count(EpisodeRecord.id).label("total"),
+            func.sum(case((EpisodeRecord.outcome == 1, 1), else_=0)).label("detected"),
+            func.sum(case((EpisodeRecord.outcome == 0, 1), else_=0)).label("secure"),
+        )
+        .filter(EpisodeRecord.vulnerability_class.isnot(None))
+        .group_by(EpisodeRecord.vulnerability_class)
+        .all()
+    )
+    result = []
+    for row in rows:
+        total = row.total or 0
+        detected = row.detected or 0
+        result.append(VulnerabilityCoverage(
+            vulnerability_class=row.vulnerability_class,
+            total_episodes=total,
+            detected_count=detected,
+            secure_count=row.secure or 0,
+            coverage_rate=(total - detected) / total if total else 0.0,
+        ))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Episodes — stop
+# ---------------------------------------------------------------------------
+@app.post("/episodes/{episode_id}/stop", response_model=EpisodeStopResponse)
+def stop_episode(episode_id: str, db: Session = Depends(get_db)) -> EpisodeStopResponse:
+    ep = db.get(EpisodeRecord, episode_id)
+    if not ep:
+        raise HTTPException(404, "Episode not found")
+    if ep.status in ("completed", "failed"):
+        return EpisodeStopResponse(
+            episode_id=episode_id,
+            status=ep.status,
+            message=f"Episode already {ep.status}",
+        )
+    ep.status = "failed"
+    ep.error = "Stopped by user"
+    db.commit()
+    return EpisodeStopResponse(
+        episode_id=episode_id,
+        status="failed",
+        message="Episode stopped",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config — update settings
+# ---------------------------------------------------------------------------
+@app.post("/config")
+def update_config(body: ConfigUpdateRequest) -> dict[str, str]:
+    settings = get_settings()
+    updated = []
+    if body.llm_model is not None:
+        updated.append(f"llm_model={body.llm_model}")
+    if body.k_factor is not None:
+        updated.append(f"k_factor={body.k_factor}")
+    if body.max_retries is not None:
+        updated.append(f"max_retries={body.max_retries}")
+    if body.use_react is not None:
+        updated.append(f"use_react={body.use_react}")
+    return {"status": "ok", "updated": updated or ["nothing"]}
 
 
 # ---------------------------------------------------------------------------
