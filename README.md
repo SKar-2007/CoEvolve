@@ -531,15 +531,15 @@ CHANGELOG.md                # Version history
 
 | Document | Purpose |
 |----------|---------|
-| [problem_statement.md](problem_statement.md) | Problem definition and success criteria |
+| [problem_statement.md](docs/problem_statement.md) | Problem definition and success criteria |
 | [blueprint.md](blueprint.md) | System architecture and formal model |
 | [agent.md](agent.md) | Agent system design (attacker, developer, judge, distiller) |
 | [build_plan.md](build_plan.md) | Phased 22-week implementation roadmap |
-| [technology_stack.md](technology_stack.md) | Technology decisions and justifications |
-| [security_governance.md](security_governance.md) | 7-layer container isolation design |
-| [threat_model.md](threat_model.md) | STRIDE threat analysis and attack trees |
+| [technology_stack.md](docs/technology_stack.md) | Technology decisions and justifications |
+| [security_governance.md](docs/security_governance.md) | 7-layer container isolation design |
+| [threat_model.md](docs/threat_model.md) | STRIDE threat analysis and attack trees |
 | [vulnerability_taxonomy.md](vulnerability_taxonomy.md) | 25+ target vulnerability classes |
-| [roadmap.md](roadmap.md) | Long-term strategic milestones |
+| [roadmap.md](docs/roadmap.md) | Long-term strategic milestones |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines and code standards |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [DEPLOY.md](DEPLOY.md) | Production deployment guide |

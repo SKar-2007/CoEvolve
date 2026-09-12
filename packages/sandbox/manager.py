@@ -1,6 +1,6 @@
 """Secure container lifecycle management for CoEvolve Sandbox.
 
-Implements the 7-layer isolation stack defined in security_governance.md:
+Implements the 7-layer isolation stack defined in docs/security_governance.md:
 
     Layer 1: Resource limits      (cgroups: CPU, memory, PIDs)
     Layer 2: Network isolation    (--network none)
