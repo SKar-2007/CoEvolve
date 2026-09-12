@@ -132,6 +132,29 @@ python scripts/demo.py --real --episodes 5
 make test
 ```
 
+## Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Install all packages in dev mode |
+| `make dev` | Install dev tools (ruff, mypy, pytest) |
+| `make test` | Run full test suite with coverage |
+| `make lint` | Run ruff linter |
+| `make typecheck` | Run mypy type checker |
+| `make docker-up` | Start dev infrastructure (db, redis, prometheus, grafana) |
+| `make docker-down` | Stop dev infrastructure |
+| `make docker-prod` | Start production stack |
+| `make docker-prod-down` | Stop production stack |
+| `make docker-logs` | Follow production API logs |
+| `make build-sandbox` | Build the sandbox Docker image |
+| `make run-api` | Start API in dev mode (auto-reload) |
+| `make run-api-prod` | Start API in production mode (4 workers) |
+| `make demo` | Run demo in mock mode |
+| `make demo-real` | Run demo with real LLM calls |
+| `make benchmark` | Run 100-episode benchmark |
+| `make stress` | Run 1000-episode stress test |
+| `make clean` | Remove caches and temp files |
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -291,6 +314,12 @@ docker/
 .github/workflows/ci.yml   # CI pipeline (lint, typecheck, tests, coverage)
 docker-compose.yml         # Development compose
 docker-compose.prod.yml    # Production compose (resource limits, log rotation)
+requirements.txt           # Runtime dependencies
+requirements-ci.txt        # CI-specific dependencies
+requirements-dev.txt       # Dev tools (ruff, mypy, pytest)
+conftest.py                # Root pytest config (sys.path setup)
+pyproject.toml             # Ruff, mypy, pytest, coverage config
+Makefile                   # Build, test, deploy targets
 DEPLOY.md                  # Full deployment guide
 ```
 
