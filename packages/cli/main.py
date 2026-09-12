@@ -1,4 +1,4 @@
-"""CoEvolve CLI — main entry point with rich output."""
+"""CoEvolve CLI — clean, minimal terminal interface."""
 
 from __future__ import annotations
 
@@ -9,243 +9,192 @@ from typing import Optional
 
 import click
 from rich.console import Console
+from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.columns import Columns
 
 console = Console()
 
-# Agent colors
-AGENT_COLORS = {
-    "attacker": "red",
-    "developer": "yellow",
-    "judge": "blue",
-    "distiller": "green",
+# ── Colors ──
+C = {
+    "red": "#E63946",
+    "yellow": "#FFD166",
+    "green": "#06D6A0",
+    "blue": "#118AB2",
+    "dim": "#6C757D",
+    "white": "#F8F9FA",
+    "bold": "#FFFFFF",
 }
 
 
-def print_banner():
-    """Print the CoEvolve banner."""
-    banner = Text()
-    banner.append("  ╔══════════════════════════════════════╗\n", style="bold white")
-    banner.append("  ║", style="bold white")
-    banner.append("  CO", style="bold red")
-    banner.append("EVOLVE", style="bold yellow")
-    banner.append("  ║", style="bold white")
-    banner.append("  ║  Adversarial Training as a Service  ║\n", style="bold white")
-    banner.append("  ╚══════════════════════════════════════╝", style="bold white")
-    console.print(banner)
+def banner():
+    t = Text()
+    t.append("  co", style="bold red")
+    t.append("evolve", style="bold yellow")
+    t.append("  │  Adversarial Training as a Service", style="dim")
+    console.print(t)
+    console.print()
 
 
-def print_agent_step(agent: str, status: str, message: str, done: bool = False, error: bool = False):
-    """Print an agent step with colored output."""
-    color = AGENT_COLORS.get(agent, "white")
-    icon = "✓" if done else ("✗" if error else "●")
-    style = f"bold {color}" if done else (f"bold red" if error else f"dim {color}")
-
-    prefix = Text(f"  {icon} ", style=style)
-    name = Text(f"{agent.upper():12s}", style=f"bold {color}")
-    msg = Text(message, style="white" if not error else "red")
-    console.print(prefix + name + msg)
+def step(agent: str, msg: str, icon: str = "·", color: str = "dim"):
+    """Print a single agent step — minimal, clean."""
+    tag = Text(f"  {icon} ", style=color)
+    name = Text(f"{agent:12s}", style=f"bold {color}")
+    body = Text(msg, style="white")
+    console.print(tag + name + body)
 
 
-def print_elo_update(before: dict, after: dict):
-    """Print Elo rating changes."""
-    atk_before = before.get("attacker", 1500)
-    atk_after = after.get("attacker", atk_before)
-    dev_before = before.get("developer", 1500)
-    dev_after = after.get("developer", dev_before)
-
-    atk_delta = atk_after - atk_before
-    dev_delta = dev_after - dev_before
-
-    atk_style = "red" if atk_delta < 0 else "green"
-    dev_style = "green" if dev_delta > 0 else "red"
-
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="bold")
-    table.add_column()
-    table.add_column()
-    table.add_column()
-
-    table.add_row(
-        "  ELO",
-        Text(f"Attacker  {atk_before:.0f}", style="red"),
-        Text(f"→  {atk_after:.0f}", style=atk_style),
-        Text(f"({atk_delta:+.0f})", style=atk_style),
-    )
-    table.add_row(
-        "",
-        Text(f"Developer {dev_before:.0f}", style="yellow"),
-        Text(f"→  {dev_after:.0f}", style=dev_style),
-        Text(f"({dev_delta:+.0f})", style=dev_style),
-    )
-    console.print(table)
+def header(title: str):
+    console.print(f"\n[bold]{title}[/bold]")
+    console.print("─" * 50)
 
 
-def print_summary(trace, vuln: str, lang: str):
-    """Print final episode summary."""
-    outcome = "VULNERABLE" if trace.judge_outcome == 1 else "SECURE"
-    outcome_style = "bold red" if trace.judge_outcome == 1 else "bold green"
-    status = "completed" if not trace.error else "failed"
-    status_style = "bold green" if status == "completed" else "bold red"
+def elo_bar(before: dict, after: dict):
+    atk_b, atk_a = before.get("attacker", 1500), after.get("attacker", 1500)
+    dev_b, dev_a = before.get("developer", 1500), after.get("developer", 1500)
+    atk_d, dev_d = atk_a - atk_b, dev_a - dev_b
 
-    table = Table(title="Episode Summary", show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="bold dim", width=16)
-    table.add_column()
+    def sign(v):
+        return f"+{v:.0f}" if v >= 0 else f"{v:.0f}"
 
-    table.add_row("Episode", Text(trace.episode_id, style="bold"))
-    table.add_row("Status", Text(status, style=status_style))
-    table.add_row("Vuln Class", Text(vuln, style="bold"))
-    table.add_row("Language", Text(lang, style="bold"))
-    table.add_row("Difficulty", Text(f"Tier {trace.difficulty_tier}", style="bold"))
-    table.add_row("Outcome", Text(outcome, style=outcome_style))
-    table.add_row("Rule Distilled", Text("YES" if trace.distilled_rule and trace.regression_passed else "NO", style="bold"))
-
-    if trace.error:
-        table.add_row("Error", Text(str(trace.error)[:80], style="red"))
-
-    table.add_row("Duration", Text(f"{trace.duration_s:.2f}s", style="bold"))
+    def col(v):
+        return "green" if v > 0 else ("red" if v < 0 else "dim")
 
     console.print()
-    console.print(Panel(table, border_style="blue", title="[bold blue]RESULT[/bold blue]"))
+    console.print(
+        Text("    ATK  ", style="bold red")
+        + Text(f"{atk_b:.0f}", style="red")
+        + Text(" → ", style="dim")
+        + Text(f"{atk_a:.0f}", style=f"bold {col(atk_d)}")
+        + Text(f"  ({sign(atk_d)})", style=col(atk_d))
+    )
+    console.print(
+        Text("    DEV  ", style="bold yellow")
+        + Text(f"{dev_b:.0f}", style="yellow")
+        + Text(" → ", style="dim")
+        + Text(f"{dev_a:.0f}", style=f"bold {col(dev_d)}")
+        + Text(f"  ({sign(dev_d)})", style=col(dev_d))
+    )
+
+
+def summary_box(trace, vuln: str, lang: str):
+    outcome = "VULNERABLE" if trace.judge_outcome == 1 else "SECURE"
+    o_color = "red" if trace.judge_outcome == 1 else "green"
+
+    lines = [
+        ("Episode", trace.episode_id, "bold"),
+        ("Status", "completed" if not trace.error else "failed", "green" if not trace.error else "red"),
+        ("Vuln", vuln, "bold"),
+        ("Lang", lang, "bold"),
+        ("Tier", str(trace.difficulty_tier), "bold"),
+        ("Outcome", outcome, f"bold {o_color}"),
+        ("Rule", "yes" if trace.distilled_rule and trace.regression_passed else "no", "bold"),
+        ("Time", f"{trace.duration_s:.2f}s", "dim"),
+    ]
+
+    table = Table(show_header=False, box=None, padding=(0, 3), expand=False)
+    table.add_column(style="bold dim", width=10)
+    table.add_column()
+    for label, val, style in lines:
+        table.add_row(label, Text(val, style=style))
+
+    console.print()
+    console.print(Panel(table, border_style="dim", title="[bold]result[/bold]", title_align="left"))
 
 
 @click.group()
 @click.version_option(package_name="coevolve-cli")
-def cli() -> None:
+def cli():
     """CoEvolve CLI — Adversarial Training as a Service."""
     pass
 
 
-# ---------------------------------------------------------------------------
-# RUN command
-# ---------------------------------------------------------------------------
+# ─── RUN ────────────────────────────────────────────────────────────
 @cli.command()
 @click.option("--vuln", "-v", default="SQLi", help="Vulnerability class")
 @click.option("--lang", "-l", default="python", help="Language (python/javascript/java)")
 @click.option("--hint", "-h", default="", help="Context hint")
 @click.option("--retries", "-r", default=3, help="Max retries")
 @click.option("--react/--no-react", default=True, help="Use ReAct agent")
-@click.option("--mock/--no-mock", default=False, help="Use mock LLM (no API key needed)")
-@click.option("--json/--no-json", "output_json", default=False, help="Output raw JSON instead of rich display")
+@click.option("--mock/--no-mock", default=False, help="Use mock LLM (no API key)")
+@click.option("--json/--no-json", "output_json", default=False, help="Raw JSON output")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def run(
-    vuln: str,
-    lang: str,
-    hint: str,
-    retries: int,
-    react: bool,
-    mock: bool,
-    output_json: bool,
-    db: str,
-) -> None:
+def run(vuln, lang, hint, retries, react, mock, output_json, db):
     """Run one training episode."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..agents.llm import build_client
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
     from ..api.config import get_settings
     from ..api.models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
-    if not output_json:
-        print_banner()
-        console.print()
-
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as sess:
-        elo_record = sess.get(EloRecord, "global")
-        current_ratings = (
-            (elo_record.attacker_rating, elo_record.developer_rating)
-            if elo_record
-            else (1500.0, 1500.0)
-        )
+        elo_rec = sess.get(EloRecord, "global")
+        elo = (elo_rec.attacker_rating, elo_rec.developer_rating) if elo_rec else (1500.0, 1500.0)
+        prompt_rec = sess.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
+        pv = prompt_rec.version if prompt_rec else 0
 
-        latest_prompt = sess.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-        prompt_version = latest_prompt.version if latest_prompt else 0
-
-        # Build LLM
         if mock:
             llm = build_client("mock", "mock")
         else:
-            settings = get_settings()
-            if settings.anthropic_api_key:
-                provider, key = "anthropic", settings.anthropic_api_key
-            elif settings.groq_api_key:
-                provider, key = "groq", settings.groq_api_key
-            elif settings.huggingface_api_key:
-                provider, key = "huggingface", settings.huggingface_api_key
-            elif settings.openrouter_api_key:
-                provider, key = "openrouter", settings.openrouter_api_key
-            elif settings.openai_api_key:
-                provider, key = "openai", settings.openai_api_key
+            s = get_settings()
+            if s.anthropic_api_key:
+                prov, key = "anthropic", s.anthropic_api_key
+            elif s.groq_api_key:
+                prov, key = "groq", s.groq_api_key
+            elif s.huggingface_api_key:
+                prov, key = "huggingface", s.huggingface_api_key
+            elif s.openrouter_api_key:
+                prov, key = "openrouter", s.openrouter_api_key
+            elif s.openai_api_key:
+                prov, key = "openai", s.openai_api_key
             else:
-                provider, key = "mock", None
-            llm = build_client(provider, settings.llm_model, api_key=key)
+                prov, key = "mock", None
+            llm = build_client(prov, s.llm_model, api_key=key)
+
+        loop = TrainingLoop(llm=llm, prompt_version=pv, use_react=react)
+        config = EpisodeConfig(vulnerability_class=vuln, language=lang, context_hint=hint, max_retries=retries)
 
         if not output_json:
-            # Print config panel
-            config_table = Table(show_header=False, box=None, padding=(0, 2))
-            config_table.add_column(style="bold dim", width=14)
-            config_table.add_column()
-            config_table.add_row("Vulnerability", Text(vuln, style="bold"))
-            config_table.add_row("Language", Text(lang, style="bold"))
-            config_table.add_row("ReAct", Text("ON" if react else "OFF", style="bold"))
-            config_table.add_row("Mock", Text("ON" if mock else "OFF", style="bold"))
-            config_table.add_row("Provider", Text(type(llm).__name__, style="bold"))
-            console.print(Panel(config_table, border_style="dim", title="[bold]CONFIG[/bold]"))
+            banner()
+            provider_name = type(llm).__name__.replace("Client", "")
+            console.print(
+                Text("  ") + Text(vuln, style="bold red")
+                + Text(" · ", style="dim") + Text(lang, style="bold yellow")
+                + Text(" · ", style="dim") + Text(provider_name, style="bold blue")
+                + Text(" · ", style="dim") + Text("mock" if mock else "live", style="bold green" if mock else "bold")
+            )
             console.print()
 
-        # Run episode with progress display
-        loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=react)
-        config = EpisodeConfig(
-            vulnerability_class=vuln,
-            language=lang,
-            context_hint=hint,
-            max_retries=retries,
-        )
+        # ── Run ──
+        if not output_json:
+            step("attacker", "generating adversarial task...", "◎", "red")
+
+        t0 = time.time()
+        trace = loop.run_episode(config, current_ratings=elo)
 
         if not output_json:
-            console.print("[bold white]  RUNNING EPISODE...[/bold white]")
-            console.print()
-            time.sleep(0.3)
-            print_agent_step("attacker", "working", "Generating adversarial task...")
-            time.sleep(0.2)
-
-        trace = loop.run_episode(config, current_ratings=current_ratings)
-
-        if not output_json:
-            print_agent_step("attacker", "done", f"Task generated ({trace.difficulty_tier}/10)", done=True)
-            time.sleep(0.1)
-            print_agent_step("developer", "working", "Reading code & building patch...")
-            time.sleep(0.1)
-            print_agent_step("developer", "done", "Patch built", done=True)
-            time.sleep(0.1)
-
-            outcome_text = "VULNERABLE" if trace.judge_outcome == 1 else "SECURE"
-            print_agent_step("judge", "working", "Running SAST + DAST verification...")
-            time.sleep(0.1)
-            print_agent_step("judge", "done", f"Outcome: {outcome_text}", done=trace.judge_outcome == 0, error=trace.judge_outcome == 1)
-            time.sleep(0.1)
+            dur = time.time() - t0
+            o = "VULNERABLE" if trace.judge_outcome == 1 else "SECURE"
+            o_c = "red" if trace.judge_outcome == 1 else "green"
+            step("attacker", f"task generated  [{trace.difficulty_tier}/10]", "●", "red")
+            step("developer", "reading code & building patch...", "◎", "yellow")
+            step("developer", "patch built", "●", "yellow")
+            step("judge", "running SAST + DAST verification...", "◎", "blue")
+            step("judge", f"outcome: {o}", "●", o_c)
 
             if trace.distilled_rule and trace.regression_passed:
-                print_agent_step("distiller", "working", "Distilling new security rule...")
-                time.sleep(0.1)
-                rule_preview = trace.distilled_rule.rule_text[:60] + "..."
-                print_agent_step("distiller", "done", f"Rule: {rule_preview}", done=True)
+                rule_preview = trace.distilled_rule.rule_text[:55] + "..."
+                step("distiller", f"new rule: {rule_preview}", "●", "green")
             else:
-                print_agent_step("distiller", "skip", "No rule to distill")
+                step("distiller", "no rule to distill", "·", "dim")
 
-            console.print()
-            print_elo_update(trace.elo_before, trace.elo_after)
+            elo_bar(trace.elo_before, trace.elo_after)
 
-        # Persist
+        # ── Persist ──
         ep = EpisodeRecord(
             id=trace.episode_id,
             status="completed" if not trace.error else "failed",
@@ -255,17 +204,16 @@ def run(
             task_description=trace.task.task_description if trace.task else "",
             patch_text=trace.patch_text,
             judge_verdict=trace.judge_verdict,
-            attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-            developer_rating=trace.elo_after.get("developer", current_ratings[1]),
+            attacker_rating=trace.elo_after.get("attacker", elo[0]),
+            developer_rating=trace.elo_after.get("developer", elo[1]),
             prompt_version=trace.prompt_version,
             error=trace.error or None,
         )
         sess.add(ep)
-
-        if elo_record:
-            elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
-            elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
-            elo_record.episodes_played += 1
+        if elo_rec:
+            elo_rec.attacker_rating = trace.elo_after.get("attacker", elo_rec.attacker_rating)
+            elo_rec.developer_rating = trace.elo_after.get("developer", elo_rec.developer_rating)
+            elo_rec.episodes_played += 1
         else:
             sess.add(EloRecord(
                 id="global",
@@ -273,24 +221,17 @@ def run(
                 developer_rating=trace.elo_after.get("developer", 1500.0),
                 episodes_played=1,
             ))
-
         if trace.distilled_rule and trace.regression_passed:
-            rule = trace.distilled_rule
+            r = trace.distilled_rule
             sess.add(RuleRecord(
-                rule_text=rule.rule_text,
-                vulnerability_class=rule.vulnerability_class,
-                source_pattern=rule.source_pattern,
-                recommended_fix=rule.recommended_fix,
-                source_trace_id=rule.source_trace_id,
-                prompt_version=trace.prompt_version,
-                approved=True,
+                rule_text=r.rule_text, vulnerability_class=r.vulnerability_class,
+                source_pattern=r.source_pattern, recommended_fix=r.recommended_fix,
+                source_trace_id=r.source_trace_id, prompt_version=trace.prompt_version, approved=True,
             ))
-
         sess.commit()
 
         if output_json:
-            # JSON mode: output raw JSON
-            result = {
+            click.echo(json.dumps({
                 "episode_id": trace.episode_id,
                 "status": "completed" if not trace.error else "failed",
                 "vulnerability_class": vuln,
@@ -305,17 +246,14 @@ def run(
                 "elo_after": trace.elo_after,
                 "duration_s": trace.duration_s,
                 "error": trace.error,
-            }
-            click.echo(json.dumps(result, indent=2))
+            }, indent=2))
         else:
-            print_summary(trace, vuln, lang)
+            summary_box(trace, vuln, lang)
 
 
-# ---------------------------------------------------------------------------
-# QUERY command
-# ---------------------------------------------------------------------------
+# ─── QUERY ──────────────────────────────────────────────────────────
 @cli.group()
-def query() -> None:
+def query():
     """Query CoEvolve data."""
     pass
 
@@ -323,18 +261,16 @@ def query() -> None:
 @query.command("episodes")
 @click.option("--limit", "-n", default=10, help="Number of episodes")
 @click.option("--vuln", default=None, help="Filter by vulnerability class")
-@click.option("--json/--no-json", "output_json", default=False, help="Output raw JSON")
+@click.option("--json/--no-json", "output_json", default=False, help="Raw JSON")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def query_episodes(limit: int, vuln: Optional[str], output_json: bool, db: str) -> None:
+def query_episodes(limit, vuln, output_json, db):
     """List recent episodes."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..api.models import EpisodeRecord
 
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
-
     with SessionLocal() as sess:
         q = sess.query(EpisodeRecord).order_by(EpisodeRecord.created_at.desc())
         if vuln:
@@ -342,64 +278,49 @@ def query_episodes(limit: int, vuln: Optional[str], output_json: bool, db: str) 
         episodes = q.limit(limit).all()
 
     if output_json:
-        result = [
-            {
-                "id": ep.id,
-                "status": ep.status,
-                "vulnerability_class": ep.vulnerability_class,
-                "difficulty_tier": ep.difficulty_tier,
-                "outcome": ep.outcome,
-                "outcome_text": "VULNERABLE" if ep.outcome == 1 else "SECURE",
-                "attacker_rating": ep.attacker_rating,
-                "developer_rating": ep.developer_rating,
-                "error": ep.error,
-                "created_at": str(ep.created_at) if ep.created_at else None,
-            }
-            for ep in episodes
-        ]
-        click.echo(json.dumps(result, indent=2))
-    else:
-        if not episodes:
-            console.print("[dim]  No episodes found.[/dim]")
-            return
+        click.echo(json.dumps([{
+            "id": ep.id, "status": ep.status, "vulnerability_class": ep.vulnerability_class,
+            "difficulty_tier": ep.difficulty_tier, "outcome": ep.outcome,
+            "outcome_text": "VULNERABLE" if ep.outcome == 1 else "SECURE",
+            "attacker_rating": ep.attacker_rating, "developer_rating": ep.developer_rating,
+            "error": ep.error, "created_at": str(ep.created_at) if ep.created_at else None,
+        } for ep in episodes], indent=2))
+        return
 
-        table = Table(title=f"Recent Episodes ({len(episodes)})", box=None, show_header=True, header_style="bold dim")
-        table.add_column("#", style="dim", width=4)
-        table.add_column("ID", style="bold", width=14)
-        table.add_column("Vuln", style="red")
-        table.add_column("Lang", style="yellow")
-        table.add_column("Outcome", justify="center")
-        table.add_column("ATK", justify="right", style="red")
-        table.add_column("DEV", justify="right", style="yellow")
+    if not episodes:
+        console.print("[dim]  no episodes[/dim]")
+        return
 
-        for i, ep in enumerate(episodes, 1):
-            outcome = Text("VULN", style="bold red") if ep.outcome == 1 else Text("SAFE", style="bold green")
-            table.add_row(
-                str(i),
-                ep.id,
-                ep.vulnerability_class,
-                ep.difficulty_tier and f"T{ep.difficulty_tier}" or "?",
-                outcome,
-                f"{ep.attacker_rating:.0f}",
-                f"{ep.developer_rating:.0f}",
-            )
-        console.print(table)
+    banner()
+    for i, ep in enumerate(episodes, 1):
+        o = "VULN" if ep.outcome == 1 else "SAFE"
+        oc = "red" if ep.outcome == 1 else "green"
+        atk_d = ep.attacker_rating
+        dev_d = ep.developer_rating
+        console.print(
+            Text(f"  {i:2d}. ", style="dim")
+            + Text(f"{ep.id}", style="bold")
+            + Text("  ", style="dim")
+            + Text(f"{ep.vulnerability_class:16s}", style="red")
+            + Text(f"T{ep.difficulty_tier}  ", style="dim")
+            + Text(f"{o:4s}", style=f"bold {oc}")
+            + Text(f"  ATK {atk_d:.0f}  DEV {dev_d:.0f}", style="dim")
+        )
+    console.print()
 
 
 @query.command("rules")
 @click.option("--vuln", default=None, help="Filter by vulnerability class")
-@click.option("--json/--no-json", "output_json", default=False, help="Output raw JSON")
+@click.option("--json/--no-json", "output_json", default=False, help="Raw JSON")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def query_rules(vuln: Optional[str], output_json: bool, db: str) -> None:
+def query_rules(vuln, output_json, db):
     """List distilled security rules."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..api.models import RuleRecord
 
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
-
     with SessionLocal() as sess:
         q = sess.query(RuleRecord).order_by(RuleRecord.created_at.desc())
         if vuln:
@@ -407,43 +328,35 @@ def query_rules(vuln: Optional[str], output_json: bool, db: str) -> None:
         rules = q.all()
 
     if output_json:
-        result = [
-            {
-                "id": rule.id,
-                "rule_text": rule.rule_text,
-                "vulnerability_class": rule.vulnerability_class,
-                "source_pattern": rule.source_pattern,
-                "recommended_fix": rule.recommended_fix,
-                "approved": rule.approved,
-                "created_at": str(rule.created_at) if rule.created_at else None,
-            }
-            for rule in rules
-        ]
-        click.echo(json.dumps(result, indent=2))
-    else:
-        if not rules:
-            console.print("[dim]  No rules distilled yet.[/dim]")
-            return
+        click.echo(json.dumps([{
+            "id": r.id, "rule_text": r.rule_text, "vulnerability_class": r.vulnerability_class,
+            "source_pattern": r.source_pattern, "recommended_fix": r.recommended_fix,
+            "approved": r.approved, "created_at": str(r.created_at) if r.created_at else None,
+        } for r in rules], indent=2))
+        return
 
-        for i, rule in enumerate(rules, 1):
-            console.print(f"  [bold green]{i}.[/bold green] [bold]{rule.vulnerability_class}[/bold] — {rule.rule_text[:80]}")
-            console.print(f"     [dim]{rule.source_pattern[:60]}...[/dim]")
-            console.print()
+    if not rules:
+        console.print("[dim]  no rules distilled yet[/dim]")
+        return
+
+    banner()
+    for i, r in enumerate(rules, 1):
+        console.print(Text(f"  {i}. ", style="bold") + Text(f"{r.vulnerability_class}", style="red") + Text(f"  {r.rule_text[:70]}", style="white"))
+        console.print(Text(f"     {r.source_pattern[:60]}...", style="dim"))
+    console.print()
 
 
 @query.command("elo")
-@click.option("--json/--no-json", "output_json", default=False, help="Output raw JSON")
+@click.option("--json/--no-json", "output_json", default=False, help="Raw JSON")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def query_elo(output_json: bool, db: str) -> None:
+def query_elo(output_json, db):
     """Show current Elo ratings."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..api.models import EloRecord
 
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
-
     with SessionLocal() as sess:
         elo = sess.get(EloRecord, "global")
 
@@ -452,113 +365,96 @@ def query_elo(output_json: bool, db: str) -> None:
     eps = elo.episodes_played if elo else 0
 
     if output_json:
-        click.echo(json.dumps({
-            "attacker_rating": atk,
-            "developer_rating": dev,
-            "episodes_played": eps,
-        }, indent=2))
-    else:
-        table = Table(title="Elo Ratings", box=None, show_header=False, padding=(0, 3))
-        table.add_column(style="bold", width=12)
-        table.add_column()
-        table.add_column()
+        click.echo(json.dumps({"attacker_rating": atk, "developer_rating": dev, "episodes_played": eps}, indent=2))
+        return
 
-        # Bar visualization
-        max_bar = 30
-        total = atk + dev
-        atk_bar = int((atk / total) * max_bar) if total > 0 else max_bar // 2
-        dev_bar = max_bar - atk_bar
+    banner()
+    max_w = 40
+    total = atk + dev
+    atk_w = int((atk / total) * max_w) if total > 0 else max_w // 2
+    dev_w = max_w - atk_w
 
-        table.add_row("Attacker", Text(f"{atk:.0f}", style="bold red"), Text("█" * atk_bar, style="red"))
-        table.add_row("Developer", Text(f"{dev:.0f}", style="bold yellow"), Text("█" * dev_bar, style="yellow"))
-        table.add_row("Episodes", Text(str(eps), style="bold"), Text(""))
-        console.print(Panel(table, border_style="blue"))
+    console.print(
+        Text("  ATK  ", style="bold red")
+        + Text(f"{atk:.0f}  ", style="red")
+        + Text("█" * atk_w, style="red")
+    )
+    console.print(
+        Text("  DEV  ", style="bold yellow")
+        + Text(f"{dev:.0f}  ", style="yellow")
+        + Text("█" * dev_w, style="yellow")
+    )
+    console.print(Text(f"\n  {eps} episodes played", style="dim"))
+    console.print()
 
 
-# ---------------------------------------------------------------------------
-# EXPORT-RULES command
-# ---------------------------------------------------------------------------
+# ─── EXPORT ─────────────────────────────────────────────────────────
 @cli.command("export-rules")
 @click.option("--vuln", default=None, help="Filter by vulnerability class")
-@click.option("--output", "-o", default=None, help="Output file (default: stdout)")
+@click.option("--output", "-o", default=None, help="Output file")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def export_rules(vuln: Optional[str], output: Optional[str], db: str) -> None:
-    """Export rules as JSON package."""
-    import time
+def export_rules(vuln, output, db):
+    """Export rules as JSON."""
+    import time as _time
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..api.models import RuleRecord
 
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
-
     with SessionLocal() as sess:
         q = sess.query(RuleRecord).filter(RuleRecord.approved == True)
         if vuln:
             q = q.filter(RuleRecord.vulnerability_class == vuln)
         rules = q.all()
 
-    package = {
+    pkg = {
         "version": "1.0.0",
-        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "exported_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
         "total_rules": len(rules),
-        "rules": [
-            {
-                "rule_text": rule.rule_text,
-                "vulnerability_class": rule.vulnerability_class,
-                "source_pattern": rule.source_pattern,
-                "recommended_fix": rule.recommended_fix,
-            }
-            for rule in rules
-        ],
+        "rules": [{"rule_text": r.rule_text, "vulnerability_class": r.vulnerability_class,
+                   "source_pattern": r.source_pattern, "recommended_fix": r.recommended_fix} for r in rules],
     }
-
-    json_str = json.dumps(package, indent=2)
+    js = json.dumps(pkg, indent=2)
     if output:
         with open(output, "w") as f:
-            f.write(json_str)
-        console.print(f"[bold green]✓[/bold green] Exported {len(rules)} rules to {output}")
+            f.write(js)
+        console.print(f"[green]  exported {len(rules)} rules → {output}[/green]")
     else:
-        click.echo(json_str)
+        click.echo(js)
 
 
-# ---------------------------------------------------------------------------
-# STATUS command
-# ---------------------------------------------------------------------------
+# ─── STATUS ─────────────────────────────────────────────────────────
 @cli.command()
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
-def status(db: str) -> None:
+def status(db):
     """Show system status."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
     from ..api.models import EpisodeRecord, EloRecord, RuleRecord
 
     engine = create_engine(db)
     SessionLocal = sessionmaker(bind=engine)
-
     with SessionLocal() as sess:
-        episode_count = sess.query(EpisodeRecord).count()
-        rule_count = sess.query(RuleRecord).count()
+        eps = sess.query(EpisodeRecord).count()
+        rules = sess.query(RuleRecord).count()
         elo = sess.get(EloRecord, "global")
 
     atk = elo.attacker_rating if elo else 1500.0
     dev = elo.developer_rating if elo else 1500.0
-    eps = elo.episodes_played if elo else 0
+    n = elo.episodes_played if elo else 0
 
-    table = Table(title="System Status", box=None, show_header=False, padding=(0, 3))
-    table.add_column(style="bold dim", width=16)
-    table.add_column()
-    table.add_row("Episodes", Text(str(episode_count), style="bold"))
-    table.add_row("Rules", Text(str(rule_count), style="bold"))
-    table.add_row("Attacker Elo", Text(f"{atk:.0f}", style="bold red"))
-    table.add_row("Developer Elo", Text(f"{dev:.0f}", style="bold yellow"))
-    table.add_row("Total Games", Text(str(eps), style="bold"))
-    console.print(Panel(table, border_style="blue"))
+    banner()
+    console.print(
+        Text("  episodes  ", style="dim") + Text(str(eps), style="bold")
+        + Text("  │  ", style="dim") + Text("rules  ", style="dim") + Text(str(rules), style="bold")
+        + Text("  │  ", style="dim") + Text("ATK ", style="red") + Text(f"{atk:.0f}", style="bold red")
+        + Text("  DEV ", style="yellow") + Text(f"{dev:.0f}", style="bold yellow")
+    )
+    console.print()
 
 
-def main() -> None:
+def main():
     cli()
 
 
