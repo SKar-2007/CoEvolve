@@ -105,3 +105,23 @@ class EloHistoryResponse(BaseModel):
 
     history: list[dict] = Field(default_factory=list)
     current: dict[str, float] = Field(default_factory=dict)
+
+
+class TrainingJobRead(BaseModel):
+    """Training job status."""
+
+    job_id: str
+    status: str
+    vulnerability_class: str = "SQLi"
+    created_at: float = 0.0
+    started_at: float | None = None
+    completed_at: float | None = None
+    result: dict | None = None
+    error: str | None = None
+
+
+class TrainingJobListResponse(BaseModel):
+    """List of training jobs with queue info."""
+
+    jobs: list[TrainingJobRead] = Field(default_factory=list)
+    queue_length: int = 0

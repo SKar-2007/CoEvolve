@@ -20,6 +20,34 @@ from .regression_guard.guard import HistoricalArchive, RegressionGuard
 
 logger = logging.getLogger(__name__)
 
+# Lazy telemetry import — graceful if prometheus_client not installed
+_telemetry_available = False
+try:
+    from ..telemetry.exporters.metrics import (
+        record_episode,
+        set_rule_count,
+        update_elo,
+    )
+
+    _telemetry_available = True
+except ImportError:  # pragma: no cover
+    pass
+
+
+def _safe_record_episode(outcome: int, vuln_class: str | None = None, duration_s: float = 0) -> None:
+    if _telemetry_available:
+        record_episode(outcome, vuln_class, duration_s)  # type: ignore[misc]
+
+
+def _safe_update_elo(attacker: float, developer: float) -> None:
+    if _telemetry_available:
+        update_elo(attacker, developer)  # type: ignore[misc]
+
+
+def _safe_set_rule_count(count: int) -> None:
+    if _telemetry_available:
+        set_rule_count(count)  # type: ignore[misc]
+
 
 @dataclass
 class EpisodeConfig:
@@ -167,6 +195,9 @@ class TrainingLoop:
             )
             trace.elo_after = {"attacker": new_ratings.attacker, "developer": new_ratings.developer}
 
+            # Emit telemetry for Elo update
+            _safe_update_elo(new_ratings.attacker, new_ratings.developer)
+
             # 5. If exploitable (developer lost), distill a rule and check regression
             if verdict.j == 1:
                 logger.info("[episode=%s] Vulnerability found — distilling rule", episode_id)
@@ -193,6 +224,7 @@ class TrainingLoop:
                         self.prompt_store.add_rule(rule)
                         self.prompt_version += 1
                         trace.prompt_version = self.prompt_version
+                        _safe_set_rule_count(len(self.prompt_store.rules()))
                         logger.info("[episode=%s] Rule accepted: %s", episode_id, rule.rule_text[:80])
                     else:
                         logger.info("[episode=%s] Rule rejected (regression detected)", episode_id)
@@ -211,6 +243,14 @@ class TrainingLoop:
             logger.exception("[episode=%s] Episode failed: %s", episode_id, exc)
 
         trace.duration_s = time.time() - t0
+
+        # Emit telemetry for episode completion
+        _safe_record_episode(
+            outcome=trace.judge_outcome,
+            vuln_class=config.vulnerability_class if trace.judge_outcome == 1 else None,
+            duration_s=trace.duration_s,
+        )
+
         return trace
 
     # ------------------------------------------------------------------

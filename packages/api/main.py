@@ -17,9 +17,12 @@ from .schemas import (
     PromptDiffResponse,
     PromptVersionRead,
     RuleRead,
+    TrainingJobListResponse,
+    TrainingJobRead,
     TrainingRunRequest,
     TrainingRunResponse,
 )
+from .task_queue import TaskQueue, TrainingJob
 
 settings = get_settings()
 
@@ -28,6 +31,16 @@ app = FastAPI(
     version="0.1.0",
     description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
 )
+
+# Global task queue instance
+_task_queue: TaskQueue | None = None
+
+
+def get_task_queue() -> TaskQueue:
+    global _task_queue
+    if _task_queue is None:
+        _task_queue = TaskQueue(redis_url=settings.redis_url)
+    return _task_queue
 
 
 @app.on_event("startup")
@@ -337,4 +350,67 @@ def run_training_episode(
         elo_after=trace.elo_after,
         duration_s=trace.duration_s,
         error=trace.error or None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Async Training Jobs (Redis queue)
+# ---------------------------------------------------------------------------
+@app.post("/training/async", response_model=TrainingJobRead, status_code=202)
+def enqueue_training_job(body: TrainingRunRequest) -> TrainingJobRead:
+    """Enqueue a training episode for background execution."""
+    queue = get_task_queue()
+    job = TrainingJob(
+        vulnerability_class=body.vulnerability_class,
+        language=body.language,
+        context_hint=body.context_hint,
+        max_retries=body.max_retries,
+    )
+    queue.enqueue(job)
+    return TrainingJobRead(
+        job_id=job.job_id,
+        status=job.status.value,
+        vulnerability_class=job.vulnerability_class,
+        created_at=job.created_at,
+    )
+
+
+@app.get("/training/jobs", response_model=TrainingJobListResponse)
+def list_training_jobs(limit: int = Query(50, ge=1, le=200)) -> TrainingJobListResponse:
+    """List recent training jobs."""
+    queue = get_task_queue()
+    jobs = queue.list_jobs(limit=limit)
+    return TrainingJobListResponse(
+        jobs=[
+            TrainingJobRead(
+                job_id=j.job_id,
+                status=j.status.value,
+                vulnerability_class=j.vulnerability_class,
+                created_at=j.created_at,
+                started_at=j.started_at,
+                completed_at=j.completed_at,
+                error=j.error or None,
+            )
+            for j in jobs
+        ],
+        queue_length=queue.queue_length(),
+    )
+
+
+@app.get("/training/jobs/{job_id}", response_model=TrainingJobRead)
+def get_training_job(job_id: str) -> TrainingJobRead:
+    """Get status of a specific training job."""
+    queue = get_task_queue()
+    job = queue.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return TrainingJobRead(
+        job_id=job.job_id,
+        status=job.status.value,
+        vulnerability_class=job.vulnerability_class,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        result=job.result if job.result else None,
+        error=job.error or None,
     )
