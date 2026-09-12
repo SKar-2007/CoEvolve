@@ -171,6 +171,7 @@ class GroqClient(LLMClient):
             model=self.model,
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
