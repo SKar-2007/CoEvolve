@@ -33,12 +33,7 @@ from .schemas import (
     VulnerabilityCoverage,
 )
 from .task_queue import TrainingJob, get_task_queue
-from .training_service import (
-    get_current_ratings,
-    get_prompt_version,
-    persist_episode,
-    resolve_llm_provider,
-)
+from .training_service import get_current_ratings, get_prompt_version, persist_episode
 
 logger = logging.getLogger(__name__)
 
@@ -366,18 +361,13 @@ def run_training_episode(
     _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> TrainingRunResponse:
     """Execute one co-evolutionary training episode (blocks until done)."""
-    from ..agents.llm import build_client
-    from ..agents.training_loop import EpisodeConfig, TrainingLoop
+    from ..agents.training_loop import EpisodeConfig
+    from .training_service import build_loop
 
     current_ratings = get_current_ratings(db)
     prompt_version = get_prompt_version(db)
 
-    settings = get_settings()
-    provider, key, model = resolve_llm_provider(settings)
-
-    llm = build_client(provider, model, api_key=key)
-
-    loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)
+    loop = build_loop(prompt_version, use_react=body.use_react)
     config = EpisodeConfig(
         vulnerability_class=body.vulnerability_class,
         language=body.language,
@@ -486,8 +476,8 @@ async def training_stream(
     """
     import json
 
-    from ..agents.llm import build_client
-    from ..agents.training_loop import EpisodeConfig, TrainingLoop
+    from ..agents.training_loop import EpisodeConfig
+    from .training_service import build_loop
 
     async def event_generator():
         db = get_session_factory()()
@@ -496,10 +486,7 @@ async def training_stream(
             current_ratings = get_current_ratings(db)
             prompt_version = get_prompt_version(db)
 
-            settings = get_settings()
-            provider, key, model = resolve_llm_provider(settings)
-
-            llm = build_client(provider, model, api_key=key)
+            loop_inst = build_loop(prompt_version, use_react=True)
             config = EpisodeConfig(
                 vulnerability_class=vulnerability_class,
                 language=language,
@@ -512,8 +499,6 @@ async def training_stream(
 
             # Run blocking training loop in a threadpool; do not hold the
             # DB connection open longer than needed — persist after completion.
-            loop_inst = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
-
             trace = await asyncio.to_thread(
                 loop_inst.run_episode, config, current_ratings=current_ratings
             )

@@ -13,6 +13,7 @@ from packages.api.training_service import (
     get_prompt_version,
     persist_episode,
     resolve_llm_provider,
+    resolve_small_llm_provider,
 )
 
 
@@ -47,6 +48,58 @@ class TestResolveProvider:
         provider, key, _ = resolve_llm_provider(s)
         assert provider == "groq"
         assert key == "gsk_test"
+
+
+class TestResolveSmallProvider:
+    def test_none_when_unset(self):
+        s = get_settings()
+        s.small_llm_model = ""
+        s.small_llm_provider = ""
+        assert resolve_small_llm_provider(s) is None
+
+    def test_none_when_no_key(self):
+        s = get_settings()
+        s.small_llm_model = "tiny-model"
+        s.small_llm_provider = "openai"
+        s.openai_api_key = ""
+        assert resolve_small_llm_provider(s) is None
+
+    def test_resolves_with_key(self):
+        s = get_settings()
+        s.small_llm_model = "tiny-model"
+        s.small_llm_provider = "openai"
+        s.openai_api_key = "sk_test"
+        assert resolve_small_llm_provider(s) == ("openai", "sk_test", "tiny-model")
+
+    def test_defaults_to_groq_provider(self):
+        s = get_settings()
+        s.small_llm_model = "tiny-model"
+        s.small_llm_provider = ""
+        s.groq_api_key = "gsk_test"
+        assert resolve_small_llm_provider(s) == ("groq", "gsk_test", "tiny-model")
+
+    def test_build_loop_passes_small_client(self):
+        from packages.api.training_service import build_loop
+
+        s = get_settings()
+        s.groq_api_key = ""
+        s.anthropic_api_key = ""
+        s.openai_api_key = ""
+        s.huggingface_api_key = ""
+        s.openrouter_api_key = ""
+        s.gemini_api_key = ""
+        s.modelscope_api_key = ""
+        s.small_llm_model = ""
+        s.small_llm_provider = ""
+        loop = build_loop(0)
+        # No small config -> distiller shares the main client
+        assert loop.distiller.client is loop.attacker.client
+
+        s.small_llm_model = "tiny"
+        s.small_llm_provider = "mock"
+        loop = build_loop(0)
+        assert loop.distiller.client is not loop.attacker.client
+        assert loop.distiller.client.model == "tiny"
 
 
 class TestPersistence:

@@ -140,6 +140,29 @@ class TestWorkerPath:
         _client()
         assert self._worker().run_once() is False
 
+    def test_small_llm_flows_to_loop(self, monkeypatch):
+        c = _client()
+        c.post("/training/jobs", json={})
+
+        seen: dict = {}
+        import packages.agents.training_loop as loop_module
+
+        real_loop = loop_module.TrainingLoop
+
+        def spy_loop(*args, **kwargs):
+            seen.update(kwargs)
+            return real_loop(*args, **kwargs)
+
+        def fake_run_episode(self, config, current_ratings=(1500.0, 1500.0)):
+            return _fake_trace()
+
+        monkeypatch.setattr(loop_module, "TrainingLoop", spy_loop)
+        monkeypatch.setattr(real_loop, "run_episode", fake_run_episode)
+        w = self._worker()
+        w._small_llm = MockClient("tiny")
+        assert w.run_once() is True
+        assert seen.get("small_llm") is w._small_llm
+
     def test_failed_job_marks_failed_and_alerts(self, monkeypatch):
         import packages.api.worker as worker_module
 

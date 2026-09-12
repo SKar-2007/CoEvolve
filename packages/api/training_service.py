@@ -31,6 +31,61 @@ def resolve_llm_provider(settings: Settings) -> tuple[str, str | None, str]:
     return "mock", None, settings.llm_model
 
 
+def _provider_key(settings: Settings, provider: str) -> str:
+    """Return the configured API key for a provider name ("" if none)."""
+    return {
+        "groq": settings.groq_api_key,
+        "anthropic": settings.anthropic_api_key,
+        "openai": settings.openai_api_key,
+        "huggingface": settings.huggingface_api_key,
+        "openrouter": settings.openrouter_api_key,
+        "gemini": settings.gemini_api_key,
+        "modelscope": settings.modelscope_api_key,
+    }.get(provider, "")
+
+
+def resolve_small_llm_provider(settings: Settings) -> tuple[str, str | None, str] | None:
+    """Resolve the optional distillation client.
+
+    Returns None when SMALL_LLM_MODEL is unset (caller must fall back to the
+    main client) or when the provider has no key configured — never a client
+    that would fail at call time.
+    """
+    if not settings.small_llm_model:
+        return None
+    provider = (settings.small_llm_provider or "").lower() or "groq"
+    if provider == "mock":
+        return "mock", None, settings.small_llm_model
+    key = _provider_key(settings, provider)
+    if not key:
+        return None
+    return provider, key, settings.small_llm_model
+
+
+def build_loop(prompt_version: int, use_react: bool = False):
+    """Build a TrainingLoop with main + optional small client.
+
+    Single source of truth for client construction across the sync endpoint,
+    the SSE stream, and the worker (which has its own env-override path and
+    does not use this helper).
+    """
+    from ..agents.llm import build_client
+    from ..agents.training_loop import TrainingLoop
+    from .config import get_settings
+
+    settings = get_settings()
+    provider, key, model = resolve_llm_provider(settings)
+    llm = build_client(provider, model, api_key=key)
+    small = None
+    resolved_small = resolve_small_llm_provider(settings)
+    if resolved_small is not None:
+        small_provider, small_key, small_model = resolved_small
+        small = build_client(small_provider, small_model, api_key=small_key)
+    return TrainingLoop(
+        llm=llm, prompt_version=prompt_version, use_react=use_react, small_llm=small
+    )
+
+
 def get_current_ratings(db: Session) -> tuple[float, float]:
     """Return (attacker, developer) ratings, defaulting to 1500/1500."""
     elo_record = db.get(EloRecord, "global")

@@ -36,6 +36,7 @@ class TrainingWorker:
         self.poll_interval = poll_interval
         self._queue: Any = None
         self._llm: Any = None
+        self._small_llm: Any = None
 
     def _ensure_initialized(self) -> None:
         """Lazy-init queue and LLM client (uses shared resolve_llm_provider)."""
@@ -49,7 +50,10 @@ class TrainingWorker:
         from packages.agents.llm import build_client
         from packages.api.config import get_settings
         from packages.api.task_queue import TaskQueue
-        from packages.api.training_service import resolve_llm_provider
+        from packages.api.training_service import (
+            resolve_llm_provider,
+            resolve_small_llm_provider,
+        )
 
         settings = get_settings()
         # Prefer explicit REDIS_URL, fall back to UPSTASH_REDIS_URL.
@@ -65,10 +69,18 @@ class TrainingWorker:
             api_key = os.getenv("GROQ_API_KEY", key or "")
         self._llm = build_client(provider, model, api_key=api_key)
 
+        # Optional cheaper distillation client (None = reuse main client).
+        # Not cost-tracked; distillation is a small fraction of tokens.
+        small_resolved = resolve_small_llm_provider(settings)
+        if small_resolved is not None:
+            small_provider, small_key, small_model = small_resolved
+            self._small_llm = build_client(small_provider, small_model, api_key=small_key)
+
         logger.info(
-            "Worker initialized: provider=%s model=%s redis=%s",
+            "Worker initialized: provider=%s model=%s small=%s redis=%s",
             provider,
             model,
+            "yes" if self._small_llm is not None else "no",
             "yes" if self._queue.is_distributed else "no (in-memory)",
         )
 
@@ -124,6 +136,7 @@ class TrainingWorker:
                 llm=tracked,
                 prompt_version=prompt_version,
                 use_react=job.use_react,
+                small_llm=getattr(self, "_small_llm", None),
             )
             config = EpisodeConfig(
                 vulnerability_class=job.vulnerability_class,

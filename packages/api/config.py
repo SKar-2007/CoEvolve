@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     llm_model: str = "openai/gpt-oss-120b"
     groq_api_key: str = ""
 
+    # Optional cheaper client for the constrained distillation step.
+    # When SMALL_LLM_MODEL is set (and a key for SMALL_LLM_PROVIDER exists),
+    # the distiller uses it instead of the main client. Unset = same client
+    # for all roles (current behavior, zero cost-structure change).
+    small_llm_provider: str = ""
+    small_llm_model: str = ""
+
     # Optional fallback providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""
