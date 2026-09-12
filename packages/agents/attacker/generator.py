@@ -198,9 +198,16 @@ class AttackerAgent:
         try:
             data = json.loads(raw_json)
         except json.JSONDecodeError:
-            # Fix single-quote JSON (some models return Python-style dicts)
+            # Try fixing common issues: single quotes, trailing commas
             import ast
-            data = ast.literal_eval(raw_json)
+            try:
+                data = ast.literal_eval(raw_json)
+            except Exception:
+                # Last resort: fix single quotes to double quotes
+                fixed = raw_json.replace("'", '"')
+                fixed = re.sub(r",\s*}", "}", fixed)
+                fixed = re.sub(r",\s*]", "]", fixed)
+                data = json.loads(fixed)
 
         # Normalize context_files: accept both string paths and dict {path, snippet}
         raw_files = data.get("context_files", [])
