@@ -1,7 +1,5 @@
 """Pydantic schemas for request/response payloads."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from enum import Enum
 
@@ -24,6 +22,7 @@ class EpisodeRead(BaseModel):
     outcome: int | None = None
     task_description: str | None = None
     patch_text: str | None = None
+    judge_verdict: dict | None = None
     error: str | None = None
     attacker_rating: float = 1500.0
     developer_rating: float = 1500.0
