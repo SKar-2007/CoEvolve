@@ -19,6 +19,7 @@ from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
     EloHistoryResponse,
+    EpisodeCreate,
     EpisodeRead,
     MetricsSnapshot,
     RuleRead,
@@ -31,25 +32,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    try:
-        engine = get_engine()
-        Base.metadata.create_all(engine)
-        _seed_elo()
-        logger.info("Database connected successfully")
-    except Exception as exc:
-        logger.error("Database connection failed: %s", exc)
-        logger.error("Check your DATABASE_URL environment variable")
-    yield
-
+settings = get_settings()
 
 app = FastAPI(
-    title="CoEvolve API",
+    title="CoEvolve Sandbox API",
     version="0.1.0",
-    description="Adversarial Training as a Service",
-    lifespan=lifespan,
+    description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
 )
 
 app.add_middleware(
@@ -61,14 +49,26 @@ app.add_middleware(
 )
 
 
-def _seed_elo() -> None:
-    db = get_session_factory()()
+@app.on_event("startup")
+def startup() -> None:
     try:
-        if db.query(EloRecord).count() == 0:
-            db.add(EloRecord(id="global", attacker_rating=1500.0, developer_rating=1500.0))
-            db.commit()
-    finally:
-        db.close()
+        Base.metadata.create_all(get_engine())
+        _seed_elo()
+    except Exception as e:
+        logger.warning("Startup database check failed (will retry on first request): %s", e)
+
+
+def _seed_elo() -> None:
+    try:
+        db = get_session_factory()()
+        try:
+            if db.query(EloRecord).count() == 0:
+                db.add(EloRecord(id="global", attacker_rating=1500.0, developer_rating=1500.0))
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("Could not seed initial ELO ratings: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,12 @@ def health() -> dict[str, str]:
 @app.get("/metrics", response_model=MetricsSnapshot)
 def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
     total = db.query(func.count(EpisodeRecord.id)).scalar() or 0
-    secure = db.query(func.count(EpisodeRecord.id)).filter(EpisodeRecord.outcome == 0).scalar() or 0
+    secure = (
+        db.query(func.count(EpisodeRecord.id))
+        .filter(EpisodeRecord.outcome == 0)
+        .scalar()
+        or 0
+    )
     rules_count = db.query(func.count(RuleRecord.id)).scalar() or 0
     elo = db.get(EloRecord, "global")
     return MetricsSnapshot(
@@ -99,6 +104,18 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 # Episodes
 # ---------------------------------------------------------------------------
+@app.post("/episodes", response_model=EpisodeRead, status_code=201)
+def create_episode(body: EpisodeCreate, db: Session = Depends(get_db)) -> EpisodeRecord:
+    ep = EpisodeRecord(
+        status="pending",
+        vulnerability_class=body.vulnerability_classes[0] if body.vulnerability_classes else "SQLi",
+    )
+    db.add(ep)
+    db.commit()
+    db.refresh(ep)
+    return ep
+
+
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
     status: str | None = Query(None),
@@ -160,6 +177,36 @@ def list_rules(
     if approved_only:
         q = q.filter(RuleRecord.approved.is_(True))
     return q.order_by(RuleRecord.created_at.desc()).limit(limit).all()
+
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+@app.get("/prompts/current")
+def current_prompt(db: Session = Depends(get_db)) -> dict:
+    prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
+    if not prompt:
+        raise HTTPException(404, "No prompts found")
+    return {
+        "version": prompt.version,
+        "base_prompt": prompt.base_prompt,
+        "rules": prompt.rules,
+        "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
+    }
+
+
+@app.get("/prompts/history")
+def prompt_history(db: Session = Depends(get_db)) -> list[dict]:
+    prompts = db.query(PromptRecord).order_by(PromptRecord.version.desc()).all()
+    return [
+        {
+            "version": p.version,
+            "base_prompt": p.base_prompt,
+            "rules": p.rules,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in prompts
+    ]
 
 
 # ---------------------------------------------------------------------------

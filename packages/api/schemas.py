@@ -14,6 +14,11 @@ class EpisodeStatus(str, Enum):
     FAILED = "failed"
 
 
+class EpisodeCreate(BaseModel):
+    vulnerability_classes: list[str] = Field(default_factory=lambda: ["SQLi"])
+    max_duration_minutes: int = 15
+
+
 class EpisodeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

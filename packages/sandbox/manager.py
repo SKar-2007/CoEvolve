@@ -67,7 +67,9 @@ class SandboxManager:
 
     def exec_run(self, container_id: str, command: str, timeout: int = 60) -> tuple[int, str]:
         """Execute a command inside an existing container."""
-        validate_command(command)
+        is_valid, reason = validate_command(command)
+        if not is_valid:
+            raise SandboxError(f"Command blocked by security policy: {reason}")
         try:
             container = self.client.containers.get(container_id)
             res = container.exec_run(
@@ -144,12 +146,24 @@ class SandboxManager:
 
 def validate_command(command: str, blocked: list[str] | None = None) -> tuple[bool, str]:
     """Validate a shell command against the blocked-command allowlist."""
-    blocked = blocked or BLOCKED_COMMANDS
+    import re
+    from pathlib import Path
+
+    blocked_list = blocked or BLOCKED_COMMANDS
+    blocked_set = {b.lower() for b in blocked_list}
     low = command.lower()
-    for b in blocked:
-        # match as standalone token word-boundary to avoid over-blocking
-        if any(token.lower() == b.lower() for token in command.split()):
-            return False, f"Blocked command: {b}"
+
+    # Split on whitespace and shell delimiters
+    tokens = [t for t in re.split(r"[\s;|>&]+", command) if t]
+    for token in tokens:
+        token_low = token.lower()
+        base_name = Path(token_low).name
+        if token_low in blocked_set:
+            return False, f"Blocked command: {token}"
+        if base_name in blocked_set:
+            return False, f"Blocked command: {base_name}"
+
+    for b in blocked_list:
         if b in low and (f"| {b} " in low or f"|{b} " in low):
             return False, f"Blocked command in pipe: {b}"
     return True, "command allowed"

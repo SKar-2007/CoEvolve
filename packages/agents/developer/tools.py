@@ -70,7 +70,12 @@ class ReadFileTool:
         path = kwargs.get("path", "")
         if not path:
             return "ERROR: path is required"
-        target = self.workspace / path
+        try:
+            target = (self.workspace / path).resolve()
+            if not target.is_relative_to(self.workspace.resolve()):
+                return "ERROR: Path traversal detected. Access denied."
+        except Exception as exc:
+            return f"ERROR invalid path: {exc}"
         if not target.exists():
             return f"ERROR: file not found: {path}"
         try:
@@ -94,7 +99,12 @@ class WriteFileTool:
         content = kwargs.get("content", "")
         if not path:
             return "ERROR: path is required"
-        target = self.workspace / path
+        try:
+            target = (self.workspace / path).resolve()
+            if not target.is_relative_to(self.workspace.resolve()):
+                return "ERROR: Path traversal detected. Access denied."
+        except Exception as exc:
+            return f"ERROR invalid path: {exc}"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
@@ -188,18 +198,22 @@ class RunTestsTool:
         self.timeout = timeout
 
     def execute(self, **kwargs: Any) -> str:
+        import sys
+
         test_path = kwargs.get("path", "tests")
-        cmd = f"python -m pytest {test_path} -x -q --tb=short 2>&1"
+        cmd = [sys.executable, "-m", "pytest", str(test_path), "-x", "-q", "--tb=short"]
         try:
             result = subprocess.run(
                 cmd,
-                shell=True,
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
             )
             output = result.stdout
+            if result.stderr:
+                output += f"\n[stderr]\n{result.stderr}"
             if result.returncode == 0:
                 return f"PASSED\n{output}"
             return f"FAILED (exit {result.returncode})\n{output}"
@@ -420,16 +434,21 @@ class ReActDeveloperAgent:
     def _parse_tool_call(text: str) -> ToolCall | None:
         """Extract a tool call from the LLM response."""
         action_match = re.search(r"Action:\s*(\w+)", text)
-        input_match = re.search(r"Action Input:\s*(\{.*?\})", text, re.DOTALL)
         if not action_match:
             return None
         tool_name = action_match.group(1)
         arguments: dict[str, Any] = {}
+        input_match = re.search(r"Action Input:\s*", text)
         if input_match:
-            import contextlib
-
-            with contextlib.suppress(json.JSONDecodeError):
-                arguments = json.loads(input_match.group(1))
+            start_idx = input_match.end()
+            brace_idx = text.find("{", start_idx)
+            if brace_idx != -1:
+                try:
+                    obj, _ = json.JSONDecoder().raw_decode(text[brace_idx:])
+                    if isinstance(obj, dict):
+                        arguments = obj
+                except Exception:
+                    pass
         return ToolCall(
             tool_name=tool_name,
             arguments=arguments,

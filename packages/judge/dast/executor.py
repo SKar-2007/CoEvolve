@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -160,7 +161,7 @@ class ExploitExecutor:
         bound app server for smoke purposes.
         """
         payload = self.library.get(class_id)
-        cmd = target_command or ["python3", "-c", "print(input())"]
+        cmd = target_command or [sys.executable, "-c", "print(input())"]
         start = _now_ms()
         proc = subprocess.run(
             cmd,

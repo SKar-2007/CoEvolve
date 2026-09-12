@@ -12,11 +12,10 @@ os.environ["DATABASE_URL"] = "sqlite:///test_coevolve.db"
 
 # Clear any cached settings/engine
 from packages.api.config import get_settings
-from packages.api.database import get_engine, get_session_factory
+from packages.api.database import get_engine, get_session_factory, reset_engine
 
 get_settings.cache_clear()
-get_engine.cache_clear()
-get_session_factory.cache_clear()
+reset_engine()
 
 from packages.api.database import Base
 from packages.api.main import app
@@ -24,8 +23,7 @@ from packages.api.main import app
 # Re-override after clearing caches
 os.environ["DATABASE_URL"] = "sqlite:///test_coevolve.db"
 get_settings.cache_clear()
-get_engine.cache_clear()
-get_session_factory.cache_clear()
+reset_engine()
 
 
 @pytest.fixture(autouse=True)

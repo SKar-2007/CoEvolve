@@ -19,9 +19,21 @@ _engine = None
 _session_factory = None
 
 
+def reset_engine() -> None:
+    """Reset cached database engine and sessionmaker (for testing)."""
+    global _engine, _session_factory
+    if _engine is not None:
+        try:
+            _engine.dispose()
+        except Exception:
+            pass
+    _engine = None
+    _session_factory = None
+
+
 def _build_url(raw_url: str) -> str:
-    """Ensure the URL has sslmode=require for Supabase/external Postgres."""
-    if not raw_url:
+    """Ensure PostgreSQL URLs have sslmode=require; keep SQLite URLs unchanged."""
+    if not raw_url or "sqlite" in raw_url:
         return raw_url
     if "sslmode" in raw_url:
         return raw_url
@@ -37,13 +49,19 @@ def get_engine():
         raw = get_settings().database_url
         url = _build_url(raw)
         logger.info("Connecting to database: %s...", url[:60])
-        _engine = create_engine(
-            url,
-            pool_pre_ping=True,
-            pool_size=1,
-            max_overflow=2,
-            connect_args={"connect_timeout": 10},
-        )
+        if "sqlite" in url:
+            _engine = create_engine(
+                url,
+                connect_args={"check_same_thread": False},
+            )
+        else:
+            _engine = create_engine(
+                url,
+                pool_pre_ping=True,
+                pool_size=1,
+                max_overflow=2,
+                connect_args={"connect_timeout": 10},
+            )
     return _engine
 
 

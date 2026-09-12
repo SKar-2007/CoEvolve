@@ -68,8 +68,12 @@ class HybridJudge:
         verdict = JudgeVerdict(j=0, episode_k=episode_k, structure=patch_text[:200])
 
         # Stage 1: static analysis
-        if workspace_dir and workspace_dir.exists():
-            sast = self.scanner.scan_directory(workspace_dir)
+        ws_path = Path(workspace_dir) if workspace_dir else None
+        if ws_path and ws_path.exists():
+            try:
+                sast = self.scanner.scan_directory(ws_path)
+            except Exception:
+                sast = self.scanner.scan_patch(patch_text)
         else:
             sast = self.scanner.scan_patch(patch_text)
 

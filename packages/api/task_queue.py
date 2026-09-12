@@ -105,7 +105,10 @@ class TaskQueue:
                 return job
             return None
         if self._memory_queue:
-            return self._memory_queue.pop(0)
+            job = self._memory_queue.pop(0)
+            job.status = JobStatus.RUNNING
+            job.started_at = time.time()
+            return job
         return None
 
     def complete(self, job: TrainingJob) -> None:
