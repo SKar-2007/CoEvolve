@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoEvolve — AI Security Arms Race</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- NAV -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <div class="logo">CO<span class="red">EVOLVE</span></div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#pipeline">Pipeline</a>
+                <a href="#targets">Targets</a>
+                <a href="#demo">Demo</a>
+                <a href="#metrics">Metrics</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero" id="hero">
+        <div class="hero-content">
+            <div class="badge">OPEN SOURCE AI SECURITY PLATFORM</div>
+            <h1 class="hero-title">THE AI<br><span class="red">ARMS RACE</span><br>STARTS HERE</h1>
+            <p class="hero-sub">Two AI agents. One attacker. One defender. Evolving security rules through adversarial competition — automatically.</p>
+            <div class="hero-buttons">
+                <a href="#demo" class="btn btn-red">TRY LIVE DEMO</a>
+                <a href="https://github.com/SKar-2007/CoEvolve" class="btn btn-outline">VIEW ON GITHUB</a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-num red">19</span>
+                    <span class="stat-label">VULNERABLE APPS</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num yellow">29</span>
+                    <span class="stat-label">SAST RULES</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num red">3</span>
+                    <span class="stat-label">LANGUAGES</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num yellow">22</span>
+                    <span class="stat-label">API ENDPOINTS</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="glow-block glow-red"></div>
+            <div class="glow-block glow-yellow"></div>
+        </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features" id="features">
+        <div class="section-header">
+            <span class="section-tag">WHY COEVOLVE</span>
+            <h2 class="section-title">ADVERSARIAL<br><span class="yellow">CO-EVOLUTION</span></h2>
+            <p class="section-desc">Traditional security tools play defense. CoEvolve pits two AI agents against each other in an arms race that gets stronger every iteration.</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon red-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <h3>ATTACKER AGENT</h3>
+                <p>Generates adversarial tasks across 10+ vulnerability classes with adaptive difficulty scaling.</p>
+            </div>
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon yellow-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <h3>DEVELOPER AGENT</h3>
+                <p>ReAct tool-use agent with 7 tools: read, write, shell, search, tests, git. Builds patches autonomously.</p>
+            </div>
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon red-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <h3>HYBRID JUDGE</h3>
+                <p>Two-stage evaluation: Semgrep SAST scanning + dynamic DAST exploit replay against live apps.</p>
+            </div>
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon yellow-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <h3>DISTILLER AGENT</h3>
+                <p>Converts failure traces into imperative security rules. Auto-registers new patterns for future episodes.</p>
+            </div>
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon red-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </div>
+                <h3>ELO RATING</h3>
+                <p>Zero-sum adaptive difficulty matching across 10 tiers. Attacker and defender ratings evolve in real-time.</p>
+            </div>
+            <div class="feature-card scroll-reveal">
+                <div class="feature-icon yellow-bg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                </div>
+                <h3>MULTI-LANGUAGE</h3>
+                <p>19 vulnerable apps across Python, JavaScript, and Java. SAST rules for all three languages.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- PIPELINE -->
+    <section class="pipeline" id="pipeline">
+        <div class="section-header">
+            <span class="section-tag">HOW IT WORKS</span>
+            <h2 class="section-title">THE CO-EVOLUTION<br><span class="red">PIPELINE</span></h2>
+        </div>
+        <div class="pipeline-flow">
+            <div class="pipeline-step scroll-reveal">
+                <div class="step-num red">01</div>
+                <div class="step-content">
+                    <h3>ATTACK</h3>
+                    <p>Attacker generates adversarial task with difficulty based on Elo rating</p>
+                </div>
+            </div>
+            <div class="pipeline-arrow scroll-reveal">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+            <div class="pipeline-step scroll-reveal">
+                <div class="step-num yellow">02</div>
+                <div class="step-content">
+                    <h3>DEFEND</h3>
+                    <p>Developer agent reads code, builds patch using ReAct tool loop</p>
+                </div>
+            </div>
+            <div class="pipeline-arrow scroll-reveal">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+            <div class="pipeline-step scroll-reveal">
+                <div class="step-num red">03</div>
+                <div class="step-content">
+                    <h3>JUDGE</h3>
+                    <p>Semgrep scans for patterns, DAST replays exploits against live app</p>
+                </div>
+            </div>
+            <div class="pipeline-arrow scroll-reveal">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+            <div class="pipeline-step scroll-reveal">
+                <div class="step-num yellow">04</div>
+                <div class="step-content">
+                    <h3>DISTILL</h3>
+                    <p>Failed patches generate new security rules via distillation</p>
+                </div>
+            </div>
+            <div class="pipeline-arrow scroll-reveal">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+            <div class="pipeline-step scroll-reveal">
+                <div class="step-num red">05</div>
+                <div class="step-content">
+                    <h3>EVOLVE</h3>
+                    <p>Elo ratings update, difficulty adjusts, new rules registered</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- TARGETS -->
+    <section class="targets" id="targets">
+        <div class="section-header">
+            <span class="section-tag">VULNERABLE APPS</span>
+            <h2 class="section-title">19 TARGETS<br><span class="yellow">3 LANGUAGES</span></h2>
+            <p class="section-desc">Every exploit is verified against live applications. No mocks, no simulations.</p>
+        </div>
+        <div class="targets-grid">
+            <div class="target-card scroll-reveal">
+                <div class="target-header red-bg">
+                    <span class="target-lang">PYTHON</span>
+                    <span class="target-count">7 APPS</span>
+                </div>
+                <div class="target-list">
+                    <div class="target-item"><span class="target-dot red"></span>SQL Injection</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Path Traversal</div>
+                    <div class="target-item"><span class="target-dot red"></span>Command Injection</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Cross-Site Scripting</div>
+                    <div class="target-item"><span class="target-dot red"></span>Server-Side Template Injection</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Server-Side Request Forgery</div>
+                    <div class="target-item"><span class="target-dot red"></span>Open Redirect</div>
+                </div>
+            </div>
+            <div class="target-card scroll-reveal">
+                <div class="target-header yellow-bg">
+                    <span class="target-lang dark-text">JAVASCRIPT</span>
+                    <span class="target-count dark-text">6 APPS</span>
+                </div>
+                <div class="target-list">
+                    <div class="target-item"><span class="target-dot red"></span>SQL Injection</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Path Traversal</div>
+                    <div class="target-item"><span class="target-dot red"></span>Command Injection</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Cross-Site Scripting</div>
+                    <div class="target-item"><span class="target-dot red"></span>Server-Side Request Forgery</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Open Redirect</div>
+                </div>
+            </div>
+            <div class="target-card scroll-reveal">
+                <div class="target-header red-bg">
+                    <span class="target-lang">JAVA</span>
+                    <span class="target-count">6 APPS</span>
+                </div>
+                <div class="target-list">
+                    <div class="target-item"><span class="target-dot yellow"></span>SQL Injection</div>
+                    <div class="target-item"><span class="target-dot red"></span>Path Traversal</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Command Injection</div>
+                    <div class="target-item"><span class="target-dot red"></span>Cross-Site Scripting</div>
+                    <div class="target-item"><span class="target-dot yellow"></span>Server-Side Request Forgery</div>
+                    <div class="target-item"><span class="target-dot red"></span>Open Redirect</div>
+                </div>
+            </div>
+        </div>
+        <div class="rules-summary scroll-reveal">
+            <div class="rules-stat">
+                <span class="rules-num red">29</span>
+                <span class="rules-label">SAST RULES</span>
+            </div>
+            <div class="rules-divider"></div>
+            <div class="rules-stat">
+                <span class="rules-num yellow">3</span>
+                <span class="rules-label">LANGUAGES</span>
+            </div>
+            <div class="rules-divider"></div>
+            <div class="rules-stat">
+                <span class="rules-num red">10</span>
+                <span class="rules-label">VULN CLASSES</span>
+            </div>
+            <div class="rules-divider"></div>
+            <div class="rules-stat">
+                <span class="rules-num yellow">100%</span>
+                <span class="rules-label">EXPLOIT VERIFIED</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- DEMO -->
+    <section class="demo" id="demo">
+        <div class="section-header">
+            <span class="section-tag">LIVE DEMO</span>
+            <h2 class="section-title">TRY IT<br><span class="yellow">YOURSELF</span></h2>
+            <p class="section-desc">Connect to the CoEvolve API and run a training episode in real-time.</p>
+        </div>
+        <div class="demo-container scroll-reveal">
+            <div class="demo-panel">
+                <div class="demo-header">
+                    <span class="demo-dot red"></span>
+                    <span class="demo-dot yellow"></span>
+                    <span class="demo-dot red"></span>
+                    <span class="demo-title">TERMINAL</span>
+                </div>
+                <div class="demo-body">
+                    <div class="demo-input-group">
+                        <label>API ENDPOINT</label>
+                        <input type="text" id="api-url" value="http://localhost:8000" class="demo-input">
+                    </div>
+                    <div class="demo-input-group">
+                        <label>VULNERABILITY CLASS</label>
+                        <select id="vuln-class" class="demo-input">
+                            <option value="SQLi">SQL Injection</option>
+                            <option value="XSS">Cross-Site Scripting</option>
+                            <option value="PathTraversal">Path Traversal</option>
+                            <option value="CommandInjection">Command Injection</option>
+                            <option value="SSRF">Server-Side Request Forgery</option>
+                            <option value="SSTI">Template Injection</option>
+                            <option value="OpenRedirect">Open Redirect</option>
+                        </select>
+                    </div>
+                    <div class="demo-input-group">
+                        <label>LANGUAGE</label>
+                        <select id="lang" class="demo-input">
+                            <option value="python">Python</option>
+                            <option value="javascript">JavaScript</option>
+                            <option value="java">Java</option>
+                        </select>
+                    </div>
+                    <button id="run-btn" class="btn btn-red btn-full" onclick="runEpisode()">RUN EPISODE</button>
+                </div>
+            </div>
+            <div class="demo-output">
+                <div class="demo-header">
+                    <span class="demo-title">OUTPUT</span>
+                </div>
+                <div class="demo-terminal" id="output">
+                    <div class="terminal-line">Waiting for input...</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- METRICS -->
+    <section class="metrics" id="metrics">
+        <div class="section-header">
+            <span class="section-tag">LIVE METRICS</span>
+            <h2 class="section-title">TRAINING<br><span class="red">DASHBOARD</span></h2>
+        </div>
+        <div class="metrics-grid scroll-reveal">
+            <div class="metric-card">
+                <div class="metric-label">TOTAL EPISODES</div>
+                <div class="metric-value red" id="m-episodes">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">SECURE RATE</div>
+                <div class="metric-value yellow" id="m-secure">0%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">ATTACKER ELO</div>
+                <div class="metric-value red" id="m-attacker">1500</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">DEVELOPER ELO</div>
+                <div class="metric-value yellow" id="m-developer">1500</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">RULES DISTILLED</div>
+                <div class="metric-value red" id="m-rules">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">API STATUS</div>
+                <div class="metric-value yellow" id="m-status">OFFLINE</div>
+            </div>
+        </div>
+        <div class="chart-container scroll-reveal">
+            <canvas id="eloChart"></canvas>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <div class="logo">CO<span class="red">EVOLVE</span></div>
+                <p>Open source AI security platform. Adversarial co-evolution for automated vulnerability detection.</p>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/SKar-2007/CoEvolve">GitHub</a>
+                <a href="#features">Features</a>
+                <a href="#demo">Demo</a>
+                <a href="#metrics">Metrics</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Built for hackathon. Open source under MIT.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
