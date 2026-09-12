@@ -140,6 +140,32 @@ class TestWorkerPath:
         _client()
         assert self._worker().run_once() is False
 
+    def test_failed_job_marks_failed_and_alerts(self, monkeypatch):
+        import packages.api.worker as worker_module
+
+        c = _client()
+        job_id = c.post("/training/jobs", json={}).json()["job_id"]
+
+        def boom(self, config, current_ratings=(1500.0, 1500.0)):
+            raise RuntimeError("loop exploded")
+
+        monkeypatch.setattr("packages.agents.training_loop.TrainingLoop.run_episode", boom)
+        notified = []
+
+        class StubManager:
+            def notify_error(self, message, context=""):
+                notified.append((message, context))
+                return {"LogChannel": True}
+
+        monkeypatch.setattr(worker_module, "_build_alerter", lambda: StubManager())
+        assert self._worker().run_once() is True
+
+        job = get_task_queue().get_job(job_id)
+        assert job is not None
+        assert job.status.value == "failed"
+        assert "loop exploded" in job.error
+        assert notified and "loop exploded" in notified[0][0]
+
     def test_auth_enforced_when_enabled(self, monkeypatch):
         monkeypatch.setenv("REQUIRE_AUTH", "true")
         get_settings.cache_clear()

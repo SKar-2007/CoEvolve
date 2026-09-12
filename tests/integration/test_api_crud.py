@@ -104,3 +104,8 @@ class TestMetrics:
         assert data["total_episodes"] == 0
         assert data["secure_rate"] == 0.0
         assert data["rules_count"] == 0
+
+    def test_metrics_elo_alias(self, client):
+        data = client.get("/metrics").json()
+        assert data["elo"] == {"attacker": 1500.0, "developer": 1500.0}
+        assert data["elo"] == data["epo"]  # deprecated alias stays in sync

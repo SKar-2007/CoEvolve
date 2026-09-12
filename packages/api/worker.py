@@ -1,10 +1,10 @@
 """Background worker for async training jobs.
 
-Polls the task queue and executes training episodes.
+Polls the task queue and executes training episodes (single-threaded;
+scale by running multiple worker processes, ideally with Redis).
 
 Usage:
     python -m packages.api.worker                    # Run worker
-    python -m packages.api.worker --concurrency 4    # 4 worker threads
     python -m packages.api.worker --once             # Process one job and exit
 """
 
@@ -166,13 +166,37 @@ class TrainingWorker:
         except Exception as exc:
             logger.exception("Job %s failed: %s", job.job_id, exc)
             self._queue.fail(job, str(exc))
+            _notify_failure(job, exc)
 
         return True
 
 
+def _build_alerter() -> Any:
+    """Build an AlertManager from env (log-only unless channels configured)."""
+    from packages.telemetry.alerting import AlertManager, LogChannel, SlackChannel
+
+    manager = AlertManager()
+    webhook = os.getenv("SLACK_WEBHOOK_URL", "")
+    if webhook:
+        manager.add_channel(SlackChannel(webhook))
+    else:
+        manager.add_channel(LogChannel())
+    return manager
+
+
+def _notify_failure(job: Any, exc: Exception) -> None:
+    """Alert on job failure. Never raises (alerting must not break the loop)."""
+    try:
+        _build_alerter().notify_error(
+            f"Training job {job.job_id} failed: {exc}",
+            context=f"vuln={job.vulnerability_class} lang={job.language}",
+        )
+    except Exception:
+        logger.warning("Failure notification failed", exc_info=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="CoEvolve training worker")
-    parser.add_argument("--concurrency", type=int, default=1, help="Number of worker threads")
     parser.add_argument("--poll-interval", type=float, default=2.0, help="Seconds between polls")
     parser.add_argument("--once", action="store_true", help="Process one job and exit")
     args = parser.parse_args()

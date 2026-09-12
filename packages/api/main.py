@@ -18,7 +18,6 @@ from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
-    ConfigUpdateRequest,
     EloHistoryResponse,
     EpisodeRead,
     EpisodeStopResponse,
@@ -124,13 +123,15 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
     secure = db.query(func.count(EpisodeRecord.id)).filter(EpisodeRecord.outcome == 0).scalar() or 0
     rules_count = db.query(func.count(RuleRecord.id)).scalar() or 0
     elo = db.get(EloRecord, "global")
+    ratings = {
+        "attacker": elo.attacker_rating if elo else 1500.0,
+        "developer": elo.developer_rating if elo else 1500.0,
+    }
     return MetricsSnapshot(
         total_episodes=total,
         secure_rate=secure / total if total else 0.0,
-        epo={
-            "attacker": elo.attacker_rating if elo else 1500.0,
-            "developer": elo.developer_rating if elo else 1500.0,
-        },
+        epo=ratings,
+        elo=ratings,
         rules_count=rules_count,
     )
 
@@ -311,26 +312,6 @@ def stop_episode(
 
 
 # ---------------------------------------------------------------------------
-# Config — update settings (auth enforced when REQUIRE_AUTH=true)
-# ---------------------------------------------------------------------------
-@app.post("/config")
-def update_config(
-    body: ConfigUpdateRequest,
-    _auth: APIKey | None = Depends(require_api_key_if_enabled),
-) -> dict[str, object]:
-    updated: list[str] = []
-    if body.llm_model is not None:
-        updated.append(f"llm_model={body.llm_model}")
-    if body.k_factor is not None:
-        updated.append(f"k_factor={body.k_factor}")
-    if body.max_retries is not None:
-        updated.append(f"max_retries={body.max_retries}")
-    if body.use_react is not None:
-        updated.append(f"use_react={body.use_react}")
-    return {"status": "ok", "updated": updated or ["nothing"]}
-
-
-# ---------------------------------------------------------------------------
 # Training — Synchronous Run
 # ---------------------------------------------------------------------------
 # NOTE: this is a sync `def` endpoint, so FastAPI runs it in a threadpool —
@@ -453,8 +434,14 @@ def get_training_job(job_id: str) -> TrainingJobRead:
 async def training_stream(
     vulnerability_class: str = "SQLi",
     language: str = "python",
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ):
-    """Stream training progress via Server-Sent Events."""
+    """Stream training progress via Server-Sent Events.
+
+    Auth enforced when REQUIRE_AUTH=true. Browsers/EventSource cannot set
+    headers, so pass ``?api_key=<key>`` (supported by the API key query
+    scheme) for this endpoint.
+    """
     import json
 
     from ..agents.llm import build_client

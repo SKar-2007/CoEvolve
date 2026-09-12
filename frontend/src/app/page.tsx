@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Metrics {
   total_episodes: number;
   secure_rate: number;
+  /** Deprecated alias kept for old backends — prefer `elo`. */
   epo: { attacker: number; developer: number };
+  elo?: { attacker: number; developer: number };
   rules_count: number;
 }
 
@@ -135,24 +137,54 @@ function Section({
   );
 }
 
-function Pre({ text }: { text: string }) {
+function Pre({ text, copy }: { text: string; copy?: string }) {
+  const [copied, setCopied] = useState(false);
+  const doCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(copy ?? text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
   return (
-    <pre
-      style={{
-        background: "var(--surface-2)",
-        border: "1px solid var(--border)",
-        borderRadius: 6,
-        padding: 12,
-        fontSize: 12,
-        lineHeight: 1.5,
-        overflow: "auto",
-        maxHeight: 300,
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-      }}
-    >
-      {text}
-    </pre>
+    <div style={{ position: "relative" }}>
+      <pre
+        style={{
+          background: "var(--surface-2)",
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+          padding: 12,
+          fontSize: 12,
+          lineHeight: 1.5,
+          overflow: "auto",
+          maxHeight: 300,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {text}
+      </pre>
+      <button
+        onClick={doCopy}
+        title="Copy to clipboard"
+        style={{
+          position: "absolute",
+          top: 6,
+          right: 6,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          padding: "2px 8px",
+          fontSize: 11,
+          cursor: "pointer",
+          color: "var(--text-dim)",
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
@@ -261,6 +293,13 @@ export default function Dashboard() {
   const [jobForm, setJobForm] = useState({ vulnerability_class: "SQLi", language: "python", use_react: false });
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<string>("");
+  const [epQuery, setEpQuery] = useState("");
+  const [epStatus, setEpStatus] = useState("all");
+  const [epOutcome, setEpOutcome] = useState("all");
+  // Pause auto-refresh while the user inspects details so the UI doesn't jump.
+  const interactiveRef = useRef(false);
+  interactiveRef.current =
+    expandedEp !== null || Object.keys(ruleDetail).length > 0 || diff !== null || running;
 
   const fetchData = useCallback(async () => {
     try {
@@ -295,7 +334,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(() => {
+      if (!interactiveRef.current && !document.hidden) fetchData();
+    }, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -410,6 +451,22 @@ export default function Dashboard() {
     if (ep.outcome === 0) perClassPerf[cls].secure++;
   });
 
+  // Prefer the canonical `elo` field; fall back to the deprecated `epo` alias.
+  const eloR = (metrics?.elo ?? metrics?.epo) as { attacker: number; developer: number } | undefined;
+
+  const filteredEpisodes = episodes.filter((ep) => {
+    if (epStatus !== "all" && ep.status !== epStatus) return false;
+    if (epOutcome === "secure" && ep.outcome !== 0) return false;
+    if (epOutcome === "vuln" && ep.outcome !== 1) return false;
+    if (epOutcome === "error" && !(ep.outcome === null || ep.outcome === undefined)) return false;
+    if (epQuery) {
+      const q = epQuery.toLowerCase();
+      const hay = `${ep.episode_id} ${ep.vulnerability_class || ""} ${ep.task_description || ""} ${ep.error || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "episodes", label: `Episodes (${episodes.length})` },
@@ -517,8 +574,8 @@ export default function Dashboard() {
                 { label: "Episodes", value: metrics.total_episodes, icon: "📊" },
                 { label: "Secure Rate", value: `${(metrics.secure_rate * 100).toFixed(0)}%`, icon: "🛡️" },
                 { label: "Rules", value: metrics.rules_count, icon: "📏" },
-                { label: "Attacker ELO", value: Math.round(metrics.epo.attacker), icon: "⚔️" },
-                { label: "Developer ELO", value: Math.round(metrics.epo.developer), icon: "🔧" },
+                { label: "Attacker ELO", value: Math.round(eloR!.attacker), icon: "⚔️" },
+                { label: "Developer ELO", value: Math.round(eloR!.developer), icon: "🔧" },
               ].map((s) => (
                 <div
                   key={s.label}
@@ -544,13 +601,13 @@ export default function Dashboard() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
             {metrics && (
               <Section title="ELO Ratings">
-                <EloBar label="Attacker" value={metrics.epo.attacker} color="var(--accent)" />
-                <EloBar label="Developer" value={metrics.epo.developer} color="var(--accent-2)" />
+                <EloBar label="Attacker" value={eloR!.attacker} color="var(--accent)" />
+                <EloBar label="Developer" value={eloR!.developer} color="var(--accent-2)" />
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Rating Gap</span>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>
-                      {Math.round(metrics.epo.developer - metrics.epo.attacker)} pts (Dev lead)
+                      {Math.round(eloR!.developer - eloR!.attacker)} pts (Dev lead)
                     </span>
                   </div>
                 </div>
@@ -729,12 +786,42 @@ export default function Dashboard() {
       )}
 
       {tab === "episodes" && (
-        <Section title={`All Episodes (${episodes.length}) — click a row for full detail`}>
+        <Section title={`All Episodes (${filteredEpisodes.length}/${episodes.length}) — click a row for full detail`}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <input
+              value={epQuery}
+              onChange={(e) => setEpQuery(e.target.value)}
+              placeholder="Search id, class, task, error…"
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", width: 240, fontSize: 13 }}
+            />
+            <select
+              value={epStatus}
+              onChange={(e) => setEpStatus(e.target.value)}
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", fontSize: 13 }}
+            >
+              <option value="all">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="pending">Pending</option>
+            </select>
+            <select
+              value={epOutcome}
+              onChange={(e) => setEpOutcome(e.target.value)}
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", fontSize: 13 }}
+            >
+              <option value="all">All outcomes</option>
+              <option value="secure">Secure</option>
+              <option value="vuln">Vulnerable</option>
+              <option value="error">Error/unknown</option>
+            </select>
+          </div>
           {episodes.length === 0 ? (
             <p style={{ color: "var(--text-dim)" }}>No episodes yet. Click “Run training now” above.</p>
+          ) : filteredEpisodes.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>No episodes match the current filters.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {episodes.map((ep) => (
+              {filteredEpisodes.map((ep) => (
                 <div
                   key={ep.episode_id}
                   style={{
@@ -815,7 +902,22 @@ export default function Dashboard() {
                     <Badge label={r.vulnerability_class} color="var(--accent-2)20" />
                     {r.approved && <Badge label="APPROVED" color="#4caf5030" />}
                   </div>
-                  <p style={{ fontSize: 13, lineHeight: 1.5 }}>{r.rule_text}</p>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <p style={{ fontSize: 13, lineHeight: 1.5, flex: 1 }}>{r.rule_text}</p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(r.rule_text);
+                        } catch {
+                          /* clipboard unavailable */
+                        }
+                      }}
+                      title="Copy rule text"
+                      style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", color: "var(--text-dim)", flexShrink: 0 }}
+                    >
+                      Copy
+                    </button>
+                  </div>
                   {ruleDetail[r.id] && (
                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
                       <Field k="Source pattern" v={<code style={{ fontSize: 12 }}>{ruleDetail[r.id].source_pattern || "—"}</code>} />

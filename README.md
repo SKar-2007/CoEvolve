@@ -325,9 +325,13 @@ save_package(pkg, Path("rules.json"))
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL connection |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
-| `JWT_SECRET` | `change-me` | JWT signing secret |
-| `GRAFANA_PASSWORD` | `admin` | Grafana admin password |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection (queue + shared rate limiter; required for async jobs across processes) |
+| `REQUIRE_AUTH` | `false` | Set `true` in production (requires `X-API-Key` on mutating endpoints) |
+| `API_KEY_STORE` | `memory` | Set `db` in production (persisted keys, shared across workers) |
+| `ADMIN_API_KEY` | — | Bootstrap admin credential (only its hash is stored) |
+| `CORS_ORIGINS` | `*` | Comma-separated origins in production (never `*` with credentials) |
+| `SLACK_WEBHOOK_URL` | — | Optional: worker failure alerts via Slack (logs only if unset) |
+| `GRAFANA_PASSWORD` | `admin` | Grafana admin password (change in production) |
 
 ## Testing
 

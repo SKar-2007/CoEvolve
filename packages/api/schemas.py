@@ -33,7 +33,9 @@ class EpisodeRead(BaseModel):
 class MetricsSnapshot(BaseModel):
     total_episodes: int = 0
     secure_rate: float = 0.0
+    # Deprecated typo alias — kept for backward compatibility. Use `elo`.
     epo: dict[str, float] = Field(default_factory=dict)
+    elo: dict[str, float] = Field(default_factory=dict)
     rules_count: int = 0
 
 
@@ -116,13 +118,6 @@ class VulnerabilityCoverage(BaseModel):
     detected_count: int = 0
     secure_count: int = 0
     coverage_rate: float = 0.0
-
-
-class ConfigUpdateRequest(BaseModel):
-    llm_model: str | None = None
-    k_factor: float | None = None
-    max_retries: int | None = None
-    use_react: bool | None = None
 
 
 class EpisodeStopResponse(BaseModel):

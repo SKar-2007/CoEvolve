@@ -770,7 +770,6 @@ OPENAI_API_KEY=sk-...
 
 # Optional
 GRAFANA_ADMIN_PASSWORD=admin
-JWT_SECRET_KEY=your-secret-key
 SENTRY_DSN=https://...@sentry.io/...
 LOG_LEVEL=INFO
 ```

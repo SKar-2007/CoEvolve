@@ -61,6 +61,8 @@ class TaskQueue:
     QUEUE_KEY = "coevolve:training:queue"
     RESULTS_PREFIX = "coevolve:training:result:"
     STATUS_PREFIX = "coevolve:training:status:"
+    # Terminal job keys expire so Redis does not grow without bound.
+    RESULT_TTL_SECONDS = 7 * 24 * 3600
 
     def __init__(self, redis_url: str | None = None) -> None:
         self._redis: Any = None
@@ -86,7 +88,11 @@ class TaskQueue:
         """Add a job to the queue."""
         if self._redis:
             self._redis.lpush(self.QUEUE_KEY, job.to_json())
-            self._redis.set(f"{self.STATUS_PREFIX}{job.job_id}", job.status.value)
+            self._redis.set(
+                f"{self.STATUS_PREFIX}{job.job_id}",
+                job.status.value,
+                ex=self.RESULT_TTL_SECONDS,
+            )
             logger.info("Enqueued job %s to Redis", job.job_id)
         else:
             self._memory_queue.append(job)
@@ -103,7 +109,11 @@ class TaskQueue:
                 job = TrainingJob.from_json(data)
                 job.status = JobStatus.RUNNING
                 job.started_at = time.time()
-                self._redis.set(f"{self.STATUS_PREFIX}{job.job_id}", job.status.value)
+                self._redis.set(
+                    f"{self.STATUS_PREFIX}{job.job_id}",
+                    job.status.value,
+                    ex=self.RESULT_TTL_SECONDS,
+                )
                 return job
             return None
         if self._memory_queue:
@@ -113,13 +123,18 @@ class TaskQueue:
             return job
         return None
 
+    def _store_terminal(self, job: TrainingJob) -> None:
+        status_key = f"{self.STATUS_PREFIX}{job.job_id}"
+        result_key = f"{self.RESULTS_PREFIX}{job.job_id}"
+        self._redis.set(status_key, job.status.value, ex=self.RESULT_TTL_SECONDS)
+        self._redis.set(result_key, job.to_json(), ex=self.RESULT_TTL_SECONDS)
+
     def complete(self, job: TrainingJob) -> None:
         """Mark a job as completed and store its result."""
         job.status = JobStatus.COMPLETED
         job.completed_at = time.time()
         if self._redis:
-            self._redis.set(f"{self.STATUS_PREFIX}{job.job_id}", job.status.value)
-            self._redis.set(f"{self.RESULTS_PREFIX}{job.job_id}", job.to_json())
+            self._store_terminal(job)
         else:
             self._memory_results[job.job_id] = job
 
@@ -129,8 +144,7 @@ class TaskQueue:
         job.error = error
         job.completed_at = time.time()
         if self._redis:
-            self._redis.set(f"{self.STATUS_PREFIX}{job.job_id}", job.status.value)
-            self._redis.set(f"{self.RESULTS_PREFIX}{job.job_id}", job.to_json())
+            self._store_terminal(job)
         else:
             self._memory_results[job.job_id] = job
 

@@ -41,7 +41,6 @@ Copy `.env.example` to `.env` and fill in:
 | `ANTHROPIC_API_KEY` | Yes* | Anthropic API key |
 | `OPENAI_API_KEY` | Yes* | OpenAI API key |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
-| `JWT_SECRET` | Yes | JWT signing secret (use `openssl rand -hex 32`) |
 | `GRAFANA_PASSWORD` | No | Grafana admin password |
 | `REQUIRE_AUTH` | Yes | Set `true` — requires `X-API-Key` on mutating endpoints |
 | `API_KEY_STORE` | Yes | Set `db` — persists keys in Postgres, shared across workers |
@@ -53,9 +52,6 @@ Copy `.env.example` to `.env` and fill in:
 ### Generating Secrets
 
 ```bash
-# Generate a secure JWT secret
-openssl rand -hex 32
-
 # Generate a secure PostgreSQL password
 openssl rand -base64 24
 

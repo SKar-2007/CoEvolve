@@ -59,3 +59,23 @@ class TestTaskQueueMemory:
         # Invalid URL must not raise — falls back to memory
         q = TaskQueue(redis_url="redis://127.0.0.1:6399/0")
         assert q.is_distributed is False
+
+
+class TestRedisTTL:
+    def test_terminal_keys_expire(self):
+        calls = []
+
+        class Stub:
+            def set(self, key, value, ex=None):
+                calls.append((key, ex))
+
+        q = TaskQueue(redis_url=None)
+        q._redis = Stub()
+        job = TrainingJob()
+        q.complete(job)
+        assert calls, "complete must write to redis"
+        assert all(ex == TaskQueue.RESULT_TTL_SECONDS for _, ex in calls)
+        calls.clear()
+        q.fail(TrainingJob(), "boom")
+        assert calls, "fail must write to redis"
+        assert all(ex == TaskQueue.RESULT_TTL_SECONDS for _, ex in calls)
