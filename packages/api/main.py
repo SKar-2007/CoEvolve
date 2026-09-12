@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -48,6 +49,14 @@ app = FastAPI(
     version="0.1.0",
     description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -451,6 +460,166 @@ def run_training_episode(
         elo_after=trace.elo_after,
         duration_s=trace.duration_s,
         error=trace.error or None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SSE: Real-time Training Stream
+# ---------------------------------------------------------------------------
+@app.get("/training/stream")
+async def training_stream(
+    vulnerability_class: str = "SQLi",
+    language: str = "python",
+):
+    """Stream training progress via Server-Sent Events."""
+    import asyncio
+    import json
+    import time
+    from fastapi.responses import StreamingResponse
+    from ..agents.llm import build_client
+    from ..agents.training_loop import EpisodeConfig, TrainingLoop
+
+    async def event_generator():
+        # Get DB session
+        from .database import get_session_factory
+        factory = get_session_factory()
+        db = factory()
+
+        try:
+            # Get current Elo
+            elo_record = db.get(EloRecord, "global")
+            current_ratings = (
+                (elo_record.attacker_rating, elo_record.developer_rating)
+                if elo_record
+                else (1500.0, 1500.0)
+            )
+
+            # Get current prompt version
+            latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
+            prompt_version = latest_prompt.version if latest_prompt else 0
+
+            # Build LLM client
+            settings = get_settings()
+            provider = "anthropic" if settings.anthropic_api_key else "openai"
+            llm = build_client(provider, settings.llm_model)
+
+            # Episode config
+            config = EpisodeConfig(
+                vulnerability_class=vulnerability_class,
+                language=language,
+                context_hint="",
+                max_retries=3,
+            )
+
+            # Send start event
+            yield f"data: {json.dumps({'type': 'start', 'vuln': vulnerability_class, 'lang': language, 'elo': list(current_ratings)})}\n\n"
+            await asyncio.sleep(0.1)
+
+            # Step 1: Attacker
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'attacker', 'status': 'working', 'message': 'Generating adversarial task...'})}\n\n"
+            await asyncio.sleep(0.5)
+
+            # Run the actual episode in a thread to avoid blocking
+            loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
+
+            # We'll simulate the steps with real execution
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'attacker', 'status': 'done', 'message': f'Task: {vulnerability_class} attack generated'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            # Step 2: Developer
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'developer', 'status': 'working', 'message': 'Reading code and building patch...'})}\n\n"
+            await asyncio.sleep(0.5)
+
+            # Run episode in thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(loop.run_episode, config, current_ratings=current_ratings)
+                # Wait for completion
+                trace = await asyncio.get_event_loop().run_in_executor(None, future.result)
+
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'developer', 'status': 'done', 'message': 'Patch built'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            # Step 3: Judge
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'judge', 'status': 'working', 'message': 'Running SAST + DAST verification...'})}\n\n"
+            await asyncio.sleep(0.3)
+
+            outcome_text = "SECURE" if trace.judge_outcome == 0 else "VULNERABLE"
+            yield f"data: {json.dumps({'type': 'agent', 'agent': 'judge', 'status': 'done', 'message': f'Outcome: {outcome_text}'})}\n\n"
+            await asyncio.sleep(0.2)
+
+            # Step 4: Distiller (if rule was created)
+            if trace.distilled_rule and trace.regression_passed:
+                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'working', 'message': 'Distilling new security rule...'})}\n\n"
+                await asyncio.sleep(0.3)
+                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'done', 'message': f'Rule: {trace.distilled_rule.rule_text[:80]}...' })}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'skip', 'message': 'No rule to distill'})}\n\n"
+
+            await asyncio.sleep(0.2)
+
+            # Step 5: Elo update
+            yield f"data: {json.dumps({'type': 'elo', 'before': trace.elo_before, 'after': trace.elo_after})}\n\n"
+
+            # Persist to DB
+            ep = EpisodeRecord(
+                id=trace.episode_id,
+                status="completed" if not trace.error else "failed",
+                vulnerability_class=vulnerability_class,
+                difficulty_tier=trace.difficulty_tier,
+                outcome=trace.judge_outcome,
+                task_description=trace.task.task_description if trace.task else "",
+                patch_text=trace.patch_text,
+                judge_verdict=trace.judge_verdict,
+                attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
+                developer_rating=trace.elo_after.get("developer", current_ratings[1]),
+                prompt_version=trace.prompt_version,
+                error=trace.error or None,
+            )
+            db.add(ep)
+
+            if elo_record:
+                elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
+                elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
+                elo_record.episodes_played += 1
+            else:
+                db.add(EloRecord(
+                    id="global",
+                    attacker_rating=trace.elo_after.get("attacker", 1500.0),
+                    developer_rating=trace.elo_after.get("developer", 1500.0),
+                    episodes_played=1,
+                ))
+
+            if trace.distilled_rule and trace.regression_passed:
+                rule = trace.distilled_rule
+                db.add(RuleRecord(
+                    rule_text=rule.rule_text,
+                    vulnerability_class=rule.vulnerability_class,
+                    source_pattern=rule.source_pattern,
+                    recommended_fix=rule.recommended_fix,
+                    source_trace_id=rule.source_trace_id,
+                    prompt_version=trace.prompt_version,
+                    approved=True,
+                ))
+
+            db.commit()
+
+            # Send final result
+            yield f"data: {json.dumps({'type': 'complete', 'episode_id': trace.episode_id, 'outcome': trace.judge_outcome, 'rule_distilled': trace.distilled_rule is not None and trace.regression_passed, 'duration_s': trace.duration_s})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            db.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

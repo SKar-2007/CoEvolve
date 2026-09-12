@@ -1,15 +1,6 @@
 {
-    "version": 2,
-    "builds": [
-        {
-            "src": "**/*",
-            "use": "@vercel/static"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "/index.html"
-        }
-    ]
+    "framework": "vite",
+    "buildCommand": "echo 'static'",
+    "outputDirectory": ".",
+    "installCommand": "echo 'no install'"
 }
