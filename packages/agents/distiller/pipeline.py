@@ -36,6 +36,11 @@ class DistilledRule:
     recommended_fix: str
     source_trace_id: str = ""
 
+    def as_dict(self) -> dict:
+        from dataclasses import asdict
+
+        return asdict(self)
+
     @property
     def is_valid(self) -> bool:
         text = self.rule_text.strip().lower()
