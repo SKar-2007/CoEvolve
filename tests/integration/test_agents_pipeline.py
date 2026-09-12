@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
-
 import pytest
-
 from packages.agents.attacker.generator import (
-    AttackerAgent,
-    GeneratedTask,
     VULNERABILITY_CLASSES,
+    AttackerAgent,
     ContextFile,
 )
 from packages.agents.developer.executor import DeveloperAgent
-from packages.agents.distiller.pipeline import DistillerAgent, DistilledRule
+from packages.agents.distiller.pipeline import DistilledRule, DistillerAgent
 from packages.agents.llm import LLMClient, LLMResponse
-from packages.judge.engine import HybridJudge, JudgeVerdict
 from packages.judge.dast.executor import StaticPayloadLibrary
+from packages.judge.engine import JudgeVerdict
 
 
 # ---------------------------------------------------------------------------

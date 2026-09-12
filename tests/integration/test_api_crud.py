@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite:///test_coevolve.db"
 # Clear any cached settings/engine
 from packages.api.config import get_settings
 from packages.api.database import get_engine, get_session_factory
+
 get_settings.cache_clear()
 get_engine.cache_clear()
 get_session_factory.cache_clear()

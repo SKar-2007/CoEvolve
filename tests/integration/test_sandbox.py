@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import json
 import tempfile
-from pathlib import Path
 
 import pytest
-
 from packages.sandbox.config import (
     BASE_IMAGE,
     BLOCKED_COMMANDS,
-    SECCOMP_PROFILE_PATH,
     ContainerLimits,
     SandboxConfig,
     WorkspaceConfig,

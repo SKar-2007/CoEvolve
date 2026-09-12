@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .database import Base, get_db, get_engine
+from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
     EpisodeCreate,

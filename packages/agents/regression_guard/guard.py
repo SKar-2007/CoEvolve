@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from ..distiller.pipeline import DistilledRule
@@ -66,7 +66,6 @@ class RegressionGuard:
 
     def check(self, candidate_rules: list[str]) -> dict:
         """Run all passing tasks against the candidate prompt; find regressions."""
-        bundle = [f"RULE PROPOSAL: {candidate_rules[-1]}"] if candidate_rules else []
         passing = self.archive.passing_tasks()
         regressions = []
         for rec in passing:

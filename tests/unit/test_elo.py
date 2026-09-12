@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
-from packages.elo.calculator import EloCalculator, Ratings
-from packages.elo.difficulty import tier_from_rating_difference, describe_tier, mapping_for
+from packages.elo.calculator import EloCalculator
+from packages.elo.difficulty import describe_tier, mapping_for, tier_from_rating_difference
 
 
 class TestEloCalculator:

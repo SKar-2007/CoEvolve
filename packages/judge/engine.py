@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .dast.executor import ExploitExecutor, PayloadLibrary
+from .dast.executor import ExploitExecutor
 from .sast.scanner import SASTResult, SemgrepScanner
 
 

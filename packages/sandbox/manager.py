@@ -14,8 +14,6 @@ Implements the 7-layer isolation stack defined in security_governance.md:
 from __future__ import annotations
 
 import json
-import subprocess
-import uuid
 
 from .config import BLOCKED_COMMANDS, SandboxConfig
 
@@ -129,10 +127,10 @@ class SandboxManager:
     # ------------------------------------------------------------------
     def verify_isolation(self, container_id: str) -> dict:
         """Run a battery of runtime checks that each isolation layer held."""
-        checks = {
-            "network_isolated": None,
-            "non_root_user": None,
-            "read_only_root": None,
+        checks: dict[str, dict[str, object]] = {
+            "network_isolated": {},
+            "non_root_user": {},
+            "read_only_root": {},
         }
         for name, cmd in (
             ("network_isolated", "ip route 2>/dev/null || true"),

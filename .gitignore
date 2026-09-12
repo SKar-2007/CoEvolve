@@ -37,4 +37,4 @@ logs/
 docker-compose.override.yml
 
 # Prompt store (local git history)
-.prompt_store/
+.prompt_store/test_coevolve.db

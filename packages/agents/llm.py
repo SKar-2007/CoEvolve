@@ -6,7 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class LLMError(RuntimeError):

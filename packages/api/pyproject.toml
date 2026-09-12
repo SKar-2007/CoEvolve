@@ -18,3 +18,4 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["api"]
+package-dir = { api = "." }

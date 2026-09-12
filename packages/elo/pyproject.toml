@@ -10,3 +10,4 @@ requires-python = ">=3.11"
 
 [tool.setuptools]
 packages = ["elo"]
+package-dir = { elo = "." }

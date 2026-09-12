@@ -7,12 +7,12 @@ training episode, matching the 7-step lifecycle in blueprint.md.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
 
 from .config import SandboxConfig
-from .manager import SandboxManager, ContainerSpec
+from .manager import ContainerSpec, SandboxManager
 
 logger = logging.getLogger(__name__)
 

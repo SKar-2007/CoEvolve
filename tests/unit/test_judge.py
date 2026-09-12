@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
-
-import pytest
-
+from packages.judge.dast.executor import (
+    SUCCESS_PATTERNS,
+    ExploitExecutor,
+    StaticPayloadLibrary,
+)
 from packages.judge.engine import HybridJudge, JudgeVerdict
-from packages.judge.sast.scanner import SemgrepScanner
-from packages.judge.dast.executor import PayloadLibrary, ExploitExecutor, StaticPayloadLibrary, SUCCESS_PATTERNS
 
 
 class TestJudgeVerdict:

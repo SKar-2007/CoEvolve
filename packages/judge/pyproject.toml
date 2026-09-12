@@ -16,5 +16,10 @@ dependencies = [
 [tool.setuptools]
 packages = ["judge", "judge.sast", "judge.dast"]
 
+[tool.setuptools.package-dir]
+judge = "."
+"judge.sast" = "sast"
+"judge.dast" = "dast"
+
 [tool.setuptools.package-data]
 "judge" = ["sast/semgrep_rules/*.yml"]

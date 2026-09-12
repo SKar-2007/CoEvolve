@@ -22,3 +22,10 @@ packages = [
     "agents.distiller",
     "agents.regression_guard",
 ]
+
+[tool.setuptools.package-dir]
+agents = "."
+"agents.attacker" = "attacker"
+"agents.developer" = "developer"
+"agents.distiller" = "distiller"
+"agents.regression_guard" = "regression_guard"

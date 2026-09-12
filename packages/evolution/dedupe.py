@@ -16,7 +16,6 @@ def is_duplicate(
     threshold: float = 0.85,
 ) -> bool:
     """Token-overlap Jaccard fallback if embeddings unavailable."""
-    from .store import PromptRule
 
     if not existing_rules:
         return False

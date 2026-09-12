@@ -13,4 +13,5 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["sandbox", "sandbox.docker"]
+packages = ["sandbox"]
+package-dir = { sandbox = "." }

@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import tempfile
-
 import pytest
-
-from packages.evolution.store import PromptStore, PromptRule, PromptVersion
-from packages.agents.distiller.pipeline import DistilledRule
+from packages.evolution.store import PromptRule, PromptStore
 
 
 @pytest.fixture
