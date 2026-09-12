@@ -26,7 +26,9 @@ secrets/
 data/artifacts/
 *.log
 logs/
-test_coevolve.db
+*.db
+*_report.json
+stress_test_*.json
 
 # IDE
 .idea/
