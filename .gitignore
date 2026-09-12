@@ -26,6 +26,7 @@ secrets/
 data/artifacts/
 *.log
 logs/
+test_coevolve.db
 
 # IDE
 .idea/
