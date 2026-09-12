@@ -425,7 +425,13 @@ client = build_client("gemini", "gemini-2.5-flash")
 | JavaScript | 10 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect, PrototypePollution |
 | Java | 9 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect |
 
-### 10. DAST Targets (7 vulnerable apps)
+### 10. DAST Targets (19 vulnerable apps across 3 languages)
+
+| Language | Apps | Runtime |
+|----------|------|---------|
+| **Python** | 7 (SQLi, PathTraversal, CmdInj, XSS, SSTI, SSRF, OpenRedirect) | Flask |
+| **JavaScript** | 6 (SQLi, PathTraversal, CmdInj, XSS, SSRF, OpenRedirect) | Node.js |
+| **Java** | 6 (SQLi, PathTraversal, CmdInj, XSS, SSRF, OpenRedirect) | Spring Boot |
 
 **File:** `packages/judge/dast/targets/vulnerable_app.py`
 
@@ -779,7 +785,7 @@ All responses include rate limit headers:
 | **Commits** | 25 |
 | **Tests** | 162 passing, 6 skipped |
 | **SAST Rules** | 29 (Python, JS, Java) |
-| **DAST Targets** | 7 vulnerable apps |
+| **DAST Targets** | 19 vulnerable apps (Python + JS + Java) |
 | **API Endpoints** | 22 |
 | **Makefile Targets** | 25 |
 | **LLM Providers** | 5 (OpenRouter, Anthropic, OpenAI, Gemini, Mock) |
@@ -791,7 +797,7 @@ All responses include rate limit headers:
 1. **Mock Training Loop** — Full co-evolutionary cycle with mock LLM
 2. **Real LLM Training** — Works with OpenRouter, Gemini, Anthropic
 3. **SAST Scanning** — 29 semgrep rules across 3 languages
-4. **DAST Exploitation** — 7 vulnerable apps with verified exploits
+4. **DAST Exploitation** — 19 vulnerable apps with verified exploits (Python/JS/Java)
 5. **Rule Distillation** — Failure traces → security rules
 6. **Regression Guarding** — Validates rules against historical tasks
 7. **Elo Rating** — Adaptive difficulty matching
@@ -838,7 +844,10 @@ All responses include rate limit headers:
 | `make benchmark` | Run 100-episode benchmark |
 | `make train` | Run 100-episode batch training |
 | `make stress` | Run 1000-episode stress test |
-| `make dast` | Run DAST exploit verification |
+| `make dast` | Run DAST exploit verification (all 19 apps: Python + JS + Java) |
+| `make dast-py` | Run Python DAST targets only |
+| `make dast-js` | Run JavaScript DAST targets only |
+| `make dast-java` | Run Java DAST targets only |
 | `make dashboard` | Start API + metrics dashboard |
 | `make rules-export` | Export rules to rules.json |
 | `make rules-import` | Import rules from rules.json |

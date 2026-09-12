@@ -135,45 +135,69 @@ def _start_js_app(vuln_class: str, port: int) -> subprocess.Popen | None:
 # ---------------------------------------------------------------------------
 # Java app launcher
 # ---------------------------------------------------------------------------
-_java_compiled = False
+_java_built = False
 
 
-def _compile_java_app() -> bool:
-    global _java_compiled
-    if _java_compiled:
+def _build_java_app() -> bool:
+    """Build the Spring Boot app with Maven if needed."""
+    global _java_built
+    if _java_built:
         return True
 
     java_dir = TARGETS_DIR / "vulnerable_app_java"
-    java_file = java_dir / "VulnerableApp.java"
-    if not java_file.exists():
+    if not (java_dir / "pom.xml").exists():
         return False
 
-    if not _check_runtime("javac"):
+    # Find Maven: check PATH, JAVA_HOME, common locations
+    mvn_cmd = shutil.which("mvn")
+    if not mvn_cmd:
+        import os
+
+        java_home = os.environ.get("JAVA_HOME", "")
+        if java_home:
+            candidate = Path(java_home) / ".." / "apache-maven-3.9.6" / "bin" / "mvn"
+            if candidate.exists():
+                mvn_cmd = str(candidate)
+    if not mvn_cmd:
+        # Try common homebrew/sdkman paths
+        for p in [
+            Path.home() / ".sdkman" / "candidates" / "maven" / "current" / "bin" / "mvn",
+            Path("/usr/local/bin/mvn"),
+        ]:
+            if p.exists():
+                mvn_cmd = str(p)
+                break
+    if not mvn_cmd:
         return False
 
     result = subprocess.run(
-        ["javac", str(java_file)],
+        [mvn_cmd, "package", "-q", "-DskipTests"],
         capture_output=True,
         cwd=str(java_dir),
     )
     if result.returncode != 0:
+        print(f"    Maven build failed: {result.stderr.decode()[:200]}")
         return False
 
-    _java_compiled = True
+    _java_built = True
     return True
 
 
 def _start_java_app(vuln_class: str, port: int) -> subprocess.Popen | None:
-    if not _check_runtime("java"):
-        return None
-
-    if not _compile_java_app():
-        return None
-
+    """Start a Spring Boot app for a specific vulnerability class."""
     java_dir = TARGETS_DIR / "vulnerable_app_java"
 
+    # Build first if needed
+    if not _build_java_app():
+        return None
+
+    jar_path = java_dir / "target" / "vulnapp-1.0.0.jar"
+    if not jar_path.exists():
+        return None
+
     proc = subprocess.Popen(
-        ["java", "-cp", str(java_dir), "VulnerableApp", "--class", vuln_class, "--port", str(port)],
+        ["java", "-jar", str(jar_path)],
+        env={**__import__("os").environ, "PORT": str(port)},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -279,8 +303,10 @@ def run_all(
                 continue
 
             try:
-                url = f"http://127.0.0.1:{port}/"
-                if not _wait_for_server(url):
+                url = f"http://127.0.0.1:{port}/internal/metadata"
+                # Java Spring Boot takes ~45s to start; Python/JS take ~2s
+                wait_timeout = 60 if language == "java" else 15
+                if not _wait_for_server(url, timeout=wait_timeout):
                     run_result.results.append(
                         ClassResult(
                             vuln_class=vuln_class, lang=language, error="Server did not start"

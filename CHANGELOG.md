@@ -6,6 +6,13 @@ All notable changes to CoEvolve Sandbox are documented here.
 
 ### Added
 
+#### Multi-Language DAST Targets
+- **JavaScript DAST Targets** — 6 vulnerable endpoints (SQLi, PathTraversal, CmdInj, XSS, SSRF, OpenRedirect) using Node.js built-in http
+- **Java Spring Boot DAST Targets** — 6 vulnerable endpoints with H2 in-memory database
+- **DAST Runner** — `--lang` flag for language selection (python/javascript/java/all)
+- **Makefile targets** — `dast-py`, `dast-js`, `dast-java` for targeted testing
+- **19 total vulnerable apps** across 3 languages (7 Python, 6 JS, 6 Java)
+
 #### Core Pipeline
 - **Training Loop Controller** — full co-evolutionary orchestrator wiring all agents
 - **Attacker Agent** — adversarial task generator with 10+ vulnerability classes and difficulty scaling

@@ -66,17 +66,23 @@ automatically matches task difficulty to developer capability.
 | **JavaScript** | 10 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect, PrototypePollution |
 | **Java** | 9 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect |
 
-### DAST Targets (7 vulnerable apps)
+### DAST Targets (19 vulnerable apps across 3 languages)
 
-| App | Vulnerability | Exploit Verified |
-|-----|--------------|-----------------|
-| **SQLi** | SQLite injection via string interpolation | `' OR '1'='1' --` |
-| **PathTraversal** | Directory escape to read files | `../../../../etc/passwd` |
-| **CommandInjection** | Shell command injection | `; cat /etc/passwd` |
-| **XSS** | Reflected cross-site scripting | `<script>alert(1)</script>` |
-| **SSTI** | Jinja2 template injection | `{{7*7}}` |
-| **SSRF** | Server-side request forgery | `http://127.0.0.1:PORT/internal/metadata` |
-| **OpenRedirect** | Unvalidated redirect | `//evil.com/phish` |
+| Language | Apps | Vulnerability Classes | Runtime |
+|----------|------|----------------------|---------|
+| **Python** | 7 | SQLi, PathTraversal, CmdInj, XSS, SSTI, SSRF, OpenRedirect | Flask |
+| **JavaScript** | 6 | SQLi, PathTraversal, CmdInj, XSS, SSRF, OpenRedirect | Node.js (built-in http) |
+| **Java** | 6 | SQLi, PathTraversal, CmdInj, XSS, SSRF, OpenRedirect | Spring Boot (H2 in-memory DB) |
+
+| Class | Python Payload | JS Payload | Java Payload |
+|-------|---------------|------------|--------------|
+| **SQLi** | `' OR '1'='1' --` | `' OR '1'='1' --` | `' OR '1'='1' --` |
+| **PathTraversal** | `../../../../etc/passwd` | `../../../../etc/passwd` | `../../../../etc/passwd` |
+| **CommandInjection** | `; cat /etc/passwd` | `; cat /etc/passwd` | `; cat /etc/passwd` |
+| **XSS** | `<script>alert(1)</script>` | `<script>alert(1)</script>` | `<script>alert(1)</script>` |
+| **SSRF** | `http://127.0.0.1:PORT/internal/metadata` | same | same |
+| **OpenRedirect** | `//evil.com/phish` | `//evil.com/phish` | `//evil.com/phish` |
+| **SSTI** | `{{7*7}}` | N/A | N/A |
 
 ### Prompt Evolution
 
@@ -190,7 +196,7 @@ make test
 | `make benchmark` | Run 100-episode benchmark |
 | `make train` | Run 100-episode batch training |
 | `make stress` | Run 1000-episode stress test |
-| `make dast` | Run DAST exploit verification against 7 vulnerable apps |
+| `make dast` | Run DAST exploit verification against 19 vulnerable apps (Python/JS/Java) |
 | `make dashboard` | Start API + metrics dashboard at localhost:8000/dashboard |
 | `make rules-export` | Export trained rules to rules.json |
 | `make rules-import` | Import rules from rules.json |
@@ -392,7 +398,10 @@ make train              # 100 episodes
 python scripts/train.py --episodes 200 --real --react --output report.json
 
 # DAST exploit verification
-make dast               # Test all 7 vulnerable apps
+make dast               # Test all 19 vulnerable apps (Python + JS + Java)
+make dast-py            # Test Python DAST targets only
+make dast-js            # Test JavaScript DAST targets only
+make dast-java          # Test Java DAST targets only
 python -m packages.judge.dast.runner --classes SQLi SSTI  # Test specific
 ```
 
