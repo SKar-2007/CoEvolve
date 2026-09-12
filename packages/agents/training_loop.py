@@ -298,11 +298,21 @@ class TrainingLoop:
             )
             trace.patch_text = patch_text
 
-            # 3. Judge evaluates the patch (SAST + DAST)
-            logger.info("[episode=%s] Judge evaluating patch", episode_id)
+            # 2b. Write attacker context_files to workspace for SAST scanning
+            workspace_path = Path(workspace_dir)
+            workspace_path.mkdir(parents=True, exist_ok=True)
+            for cf in task.context_files:
+                cf_path = workspace_path / cf.path
+                cf_path.parent.mkdir(parents=True, exist_ok=True)
+                cf_path.write_text(cf.snippet, encoding="utf-8")
+            # Also write the developer's patch as a file so SAST can scan it
+            patch_file = workspace_path / "developer_patch.py"
+            patch_file.write_text(patch_text, encoding="utf-8")
+
+            # 3. Judge evaluates the workspace (SAST on all files + DAST)
+            logger.info("[episode=%s] Judge evaluating workspace", episode_id)
             self._notify("on_step_start", "judge", "running SAST + DAST verification...")
             s = time.time()
-            workspace_path = Path(workspace_dir)
             verdict = self.judge.evaluate(
                 patch_text=patch_text,
                 vulnerability_class=config.vulnerability_class,
@@ -311,6 +321,11 @@ class TrainingLoop:
             )
             trace.judge_outcome = verdict.j
             trace.judge_verdict = verdict.as_dict()
+
+            # Clean up workspace after evaluation
+            import shutil
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path, ignore_errors=True)
 
             outcome_text = "VULNERABLE" if verdict.j == 1 else "SECURE"
             self._notify("on_step_end", "judge", f"outcome: {outcome_text}", time.time() - s)
