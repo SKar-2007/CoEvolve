@@ -187,7 +187,10 @@ class AttackerAgent:
 
     @staticmethod
     def _parse_task(text: str) -> GeneratedTask:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
+        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        cleaned = re.sub(r"```(?:json)?\s*", "", text)
+        cleaned = re.sub(r"```\s*$", "", cleaned, flags=re.MULTILINE)
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError("LLM did not return a JSON task object")
         data = json.loads(match.group(0))

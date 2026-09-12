@@ -15,5 +15,6 @@ prometheus-client
 sentence-transformers
 python-dotenv
 uvicorn
+google-genai
 ruff
 mypy

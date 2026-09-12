@@ -143,6 +143,54 @@ class OpenRouterClient(OpenAIClient):
         )
 
 
+class GeminiClient(LLMClient):
+    def __init__(self, model: str, api_key: str | None = None):
+        super().__init__(model)
+        self._api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not self._api_key:
+            raise LLMError("GEMINI_API_KEY not set")
+
+    def generate(self, system, user, temperature=0.7, max_tokens=4096):
+        try:
+            from google import genai  # type: ignore[import-not-found]
+            from google.genai import types  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover
+            raise LLMError(
+                "google-genai SDK not installed. Run `pip install google-genai`"
+            ) from exc
+        client = genai.Client(api_key=self._api_key)
+
+        import time
+
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(
+                    model=self.model,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                    ),
+                )
+                text = response.text or ""
+                usage = response.usage_metadata
+                return LLMResponse(
+                    text=text,
+                    provider="gemini",
+                    model=self.model,
+                    prompt_tokens=usage.prompt_token_count if usage else 0,
+                    completion_tokens=usage.candidates_token_count if usage else 0,
+                    raw={"text": text},
+                )
+            except Exception as exc:
+                if "503" in str(exc) and attempt < 2:
+                    time.sleep(2**attempt)
+                    continue
+                raise LLMError(f"Gemini API error: {exc}") from exc
+        raise LLMError("Gemini API failed after 3 retries")
+
+
 class ModelConfig(BaseModel):
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-5"
@@ -160,4 +208,6 @@ def build_client(provider: str, model: str, api_key: str | None = None) -> LLMCl
         return OpenAIClient(model, api_key)
     if provider in {"openrouter", "deepseek", "groq"}:
         return OpenRouterClient(model, api_key)
+    if provider == "gemini":
+        return GeminiClient(model, api_key)
     raise LLMError(f"Unknown provider: {provider}")

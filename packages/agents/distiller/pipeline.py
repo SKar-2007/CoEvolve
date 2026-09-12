@@ -61,7 +61,10 @@ class DistillerAgent:
 
     @staticmethod
     def _parse_rule(text: str) -> DistilledRule:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
+        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        cleaned = re.sub(r"```(?:json)?\s*", "", text)
+        cleaned = re.sub(r"```\s*$", "", cleaned, flags=re.MULTILINE)
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError("Distiller did not return a JSON rule")
         data = json.loads(match.group(0))
