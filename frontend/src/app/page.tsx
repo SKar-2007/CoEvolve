@@ -11,62 +11,90 @@ export default function Dashboard() {
     api.metrics().then(setMetrics).catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <div className="text-red-400 p-8">Failed to load: {error}</div>;
-  if (!metrics) return <div className="text-[--muted] p-8">Loading...</div>;
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+        <div className="text-6xl">⚠</div>
+        <h1 className="text-xl font-semibold text-zinc-200">Cannot reach backend</h1>
+        <p className="text-zinc-500 text-sm max-w-md text-center">{error}</p>
+        <p className="text-zinc-600 text-xs">Make sure the Render backend is deployed and the API URL is set.</p>
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="flex items-center gap-3 text-zinc-500">
+          <div className="w-5 h-5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+          Loading...
+        </div>
+      </div>
+    );
+  }
 
   const securePct = (metrics.secure_rate * 100).toFixed(1);
   const atk = metrics.epo.attacker || 1500;
   const dev = metrics.epo.developer || 1500;
 
   return (
-    <div className="max-w-4xl">
-      <h1 className="text-2xl font-bold mb-6">
-        <span className="text-brand-red">co</span>
-        <span className="text-brand-yellow">evolve</span>
-        <span className="text-[--muted] text-base ml-3">Dashboard</span>
+    <div>
+      <h1 className="text-2xl font-bold mb-8">
+        <span className="text-red-500">co</span>
+        <span className="text-amber-400">evolve</span>
+        <span className="text-zinc-600 text-base ml-3 font-normal">Dashboard</span>
       </h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <Card label="Episodes" value={String(metrics.total_episodes)} color="text-white" />
-        <Card label="Secure Rate" value={`${securePct}%`} color="text-brand-green" />
-        <Card label="Rules" value={String(metrics.rules_count)} color="text-brand-blue" />
-        <Card label="ATK Rating" value={atk.toFixed(0)} color="text-brand-red" />
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Total Episodes" value={String(metrics.total_episodes)} />
+        <StatCard label="Secure Rate" value={`${securePct}%`} accent={metrics.secure_rate > 0.5 ? "green" : "red"} />
+        <StatCard label="Rules Distilled" value={String(metrics.rules_count)} accent="blue" />
+        <StatCard label="Episodes Played" value={String(metrics.total_episodes)} />
       </div>
 
-      <div className="bg-[--surface] rounded-lg border border-[--border] p-6">
-        <h2 className="text-sm font-semibold text-[--muted] mb-4">ELO RATINGS</h2>
-        <div className="space-y-3">
-          <EloBar label="ATK" value={atk} max={2500} color="bg-brand-red" />
-          <EloBar label="DEV" value={dev} max={2500} color="bg-brand-yellow" />
+      {/* Elo chart */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Elo Ratings</h2>
+        <div className="space-y-4">
+          <EloRow label="Attacker" value={atk} color="bg-red-500" textColor="text-red-400" />
+          <EloRow label="Developer" value={dev} color="bg-amber-400" textColor="text-amber-400" />
         </div>
-        <p className="text-xs text-[--muted] mt-3">
-          {metrics.total_episodes} episodes played
-        </p>
+        <div className="mt-4 flex items-center gap-4 text-xs text-zinc-600">
+          <span>Range: 1000–2500</span>
+          <span>•</span>
+          <span>K-factor: 32</span>
+          <span>•</span>
+          <span>{metrics.total_episodes} games played</span>
+        </div>
       </div>
     </div>
   );
 }
 
-function Card({ label, value, color }: { label: string; value: string; color: string }) {
+function StatCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  const colorMap: Record<string, string> = {
+    green: "text-emerald-400",
+    red: "text-red-400",
+    blue: "text-blue-400",
+  };
   return (
-    <div className="bg-[--surface] rounded-lg border border-[--border] p-4">
-      <div className="text-xs text-[--muted] mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <div className="text-xs text-zinc-500 mb-1">{label}</div>
+      <div className={`text-3xl font-bold ${accent ? colorMap[accent] || "text-white" : "text-white"}`}>{value}</div>
     </div>
   );
 }
 
-function EloBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const pct = Math.min((value / max) * 100, 100);
+function EloRow({ label, value, color, textColor }: { label: string; value: number; color: string; textColor: string }) {
+  const pct = Math.max(0, Math.min(100, ((value - 1000) / 1500) * 100));
   return (
-    <div className="flex items-center gap-3">
-      <span className={`text-sm font-bold w-8 ${label === "ATK" ? "text-brand-red" : "text-brand-yellow"}`}>
-        {label}
-      </span>
-      <div className="flex-1 h-4 bg-[--bg] rounded overflow-hidden">
-        <div className={`h-full ${color} rounded`} style={{ width: `${pct}%` }} />
+    <div className="flex items-center gap-4">
+      <span className={`text-sm font-semibold w-20 ${textColor}`}>{label}</span>
+      <div className="flex-1 h-6 bg-zinc-800 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-sm font-mono w-12 text-right">{value.toFixed(0)}</span>
+      <span className="text-sm font-mono text-zinc-300 w-12 text-right">{value.toFixed(0)}</span>
     </div>
   );
 }

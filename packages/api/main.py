@@ -27,10 +27,21 @@ from .schemas import (
 )
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    Base.metadata.create_all(get_engine())
-    _seed_elo()
+    try:
+        engine = get_engine()
+        Base.metadata.create_all(engine)
+        _seed_elo()
+        logger.info("Database connected successfully")
+    except Exception as exc:
+        logger.error("Database connection failed: %s", exc)
+        logger.error("Check your DATABASE_URL environment variable")
     yield
 
 

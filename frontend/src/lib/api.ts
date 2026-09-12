@@ -78,7 +78,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
+    throw new Error(`Backend returned ${res.status}: ${body}`);
   }
   return res.json();
 }
@@ -105,12 +105,21 @@ export const api = {
   ) => {
     const url = `${API_BASE}/training/stream?vulnerability_class=${encodeURIComponent(vuln)}&language=${encodeURIComponent(lang)}`;
     const es = new EventSource(url);
+
+    const timeout = setTimeout(() => {
+      es.close();
+      onError("Connection timed out. Is the backend running?");
+    }, 10000);
+
+    es.onopen = () => clearTimeout(timeout);
+
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data) as SSEEvent;
         onEvent(data);
         if (data.type === "complete" || data.type === "error") {
           es.close();
+          clearTimeout(timeout);
           onDone();
         }
       } catch {
@@ -119,8 +128,21 @@ export const api = {
     };
     es.onerror = () => {
       es.close();
-      onError("SSE connection failed");
+      clearTimeout(timeout);
+      onError("Cannot connect to backend. Make sure the API server is running.");
     };
-    return () => es.close();
+    return () => {
+      es.close();
+      clearTimeout(timeout);
+    };
+  },
+
+  checkConnection: async (): Promise<{ ok: boolean; url: string; error?: string }> => {
+    try {
+      await apiFetch("/health");
+      return { ok: true, url: API_BASE };
+    } catch (e) {
+      return { ok: false, url: API_BASE, error: String(e) };
+    }
   },
 };

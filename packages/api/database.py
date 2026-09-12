@@ -2,33 +2,56 @@
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from .config import get_settings
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-@lru_cache
+_engine = None
+_session_factory = None
+
+
+def _build_url(raw_url: str) -> str:
+    """Ensure the URL has sslmode=require for Supabase/external Postgres."""
+    if not raw_url:
+        return raw_url
+    if "sslmode" in raw_url:
+        return raw_url
+    separator = "&" if "?" in raw_url else "?"
+    return f"{raw_url}{separator}sslmode=require"
+
+
 def get_engine():
-    url = get_settings().database_url
-    # Supabase requires SSL
-    if "supabase" in url or "sslmode" not in url:
-        if "?" in url:
-            url += "&sslmode=require"
-        else:
-            url += "?sslmode=require"
-    return create_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=3)
+    global _engine
+    if _engine is None:
+        from .config import get_settings
+
+        raw = get_settings().database_url
+        url = _build_url(raw)
+        logger.info("Connecting to database: %s...", url[:60])
+        _engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=2,
+            connect_args={"connect_timeout": 10},
+        )
+    return _engine
 
 
-@lru_cache
 def get_session_factory() -> sessionmaker:
-    return sessionmaker(bind=get_engine(), expire_on_commit=False)
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = sessionmaker(bind=get_engine(), expire_on_commit=False)
+    return _session_factory
 
 
 def get_db():
