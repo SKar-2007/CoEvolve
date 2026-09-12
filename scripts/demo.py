@@ -143,6 +143,10 @@ def run_demo_mock(episodes: int = 3, vuln_class: str = "SQLi") -> None:
 
 def run_demo_real(episodes: int = 3, vuln_class: str = "SQLi") -> None:
     """Run demo with real LLM calls — requires API key."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     from packages.agents.cost_tracking import CostTrackingClient
     from packages.agents.llm import build_client
     from packages.agents.training_loop import EpisodeConfig, TrainingLoop
@@ -151,8 +155,11 @@ def run_demo_real(episodes: int = 3, vuln_class: str = "SQLi") -> None:
     print("CoEvolve Sandbox — End-to-End Demo (Real LLM)")
     print("=" * 70)
 
-    provider = "anthropic"
-    llm = build_client(provider)
+    import os
+
+    provider = os.getenv("LLM_PROVIDER", "openrouter")
+    model = os.getenv("LLM_MODEL", "deepseek/deepseek-chat-v3-0324")
+    llm = build_client(provider, model)
     tracked = CostTrackingClient(llm)
     loop = TrainingLoop(llm=tracked)
 
