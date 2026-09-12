@@ -10,6 +10,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .attacker.generator import AttackerAgent, GeneratedTask
@@ -177,11 +178,12 @@ class TrainingLoop:
 
             # 3. Judge evaluates the patch (SAST + DAST)
             logger.info("[episode=%s] Judge evaluating patch", episode_id)
+            workspace_path = Path(workspace_dir)
             verdict = self.judge.evaluate(
                 patch_text=patch_text,
                 vulnerability_class=config.vulnerability_class,
                 episode_k=self.prompt_version,
-                workspace_dir=workspace_dir,
+                workspace_dir=workspace_path,
             )
             trace.judge_outcome = verdict.j
             trace.judge_verdict = verdict.as_dict()

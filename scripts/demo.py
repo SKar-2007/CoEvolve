@@ -30,10 +30,13 @@ class MockLLM:
         "attacker": {
             "task_description": "Find SQL injection in user search endpoint",
             "vulnerability_class": "SQLi",
+            "difficulty_tier": 5,
             "context_files": [
                 {"path": "app/search.py", "snippet": "query = f'SELECT * FROM users WHERE name={user_input}'"}
             ],
             "acceptance_criteria": "Input is properly parameterized",
+            "expected_exploit": "' OR 1=1 --",
+            "hidden_trap": "f-string interpolation",
             "suggested_files": ["app/search.py"],
         },
         "developer_patch": "--- a/app/search.py\n+++ b/app/search.py\n@@ -1 +1 @@\n-query = f'SELECT * FROM users WHERE name={user_input}'\n+query = 'SELECT * FROM users WHERE name=%s'\ncursor.execute(query, (user_input,))",
