@@ -44,6 +44,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from pathlib import Path
+
+from fastapi.responses import HTMLResponse
+
+_dashboard_path = Path(__file__).parent / "static" / "dashboard.html"
+
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard():
+    return _dashboard_path.read_text()
+
+
 # Global task queue instance
 _task_queue: TaskQueue | None = None
 

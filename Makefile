@@ -89,6 +89,10 @@ rules-export:
 rules-import:
 	python scripts/rules_import.py --input rules.json
 
+dashboard:
+	@echo "Dashboard available at http://localhost:8000/dashboard"
+	uvicorn packages.api.main:app --reload --host 0.0.0.0 --port 8000
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------

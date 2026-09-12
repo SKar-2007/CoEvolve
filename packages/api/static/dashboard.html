@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoEvolve Sandbox - Metrics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --card: #1a1d27;
+            --border: #2a2d3a;
+            --text: #e1e4ed;
+            --muted: #8b8fa3;
+            --accent: #6c5ce7;
+            --green: #00b894;
+            --red: #e17055;
+            --yellow: #fdcb6e;
+            --blue: #74b9ff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--bg); color: var(--text); padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header .status { display: flex; gap: 8px; align-items: center; }
+        .header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+        .header .dot.offline { background: var(--red); }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+        .stat-card .value.green { color: var(--green); }
+        .stat-card .value.blue { color: var(--blue); }
+        .stat-card .value.yellow { color: var(--yellow); }
+        .stat-card .value.accent { color: var(--accent); }
+        .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .chart-card h3 { font-size: 13px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .chart-card canvas { width: 100% !important; height: 200px !important; }
+        .full-width { grid-column: 1 / -1; }
+        .rules-section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .rules-section h3 { font-size: 13px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .rule-list { max-height: 300px; overflow-y: auto; }
+        .rule-item { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+        .rule-item:last-child { border-bottom: none; }
+        .rule-item .class { color: var(--accent); font-weight: 600; }
+        .rule-item .text { color: var(--muted); margin-top: 2px; }
+        .refresh { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        .refresh:hover { opacity: 0.9; }
+        .error { color: var(--red); font-size: 12px; text-align: center; padding: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: repeat(2, 1fr); } .charts { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CoEvolve Sandbox - Metrics</h1>
+        <div class="status">
+            <div class="dot" id="status-dot"></div>
+            <span id="status-text" style="font-size:12px;color:var(--muted)">Loading...</span>
+            <button class="refresh" onclick="refresh()">Refresh</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="stat-card"><div class="label">Total Episodes</div><div class="value blue" id="stat-episodes">-</div></div>
+        <div class="stat-card"><div class="label">Secure Rate</div><div class="value green" id="stat-secure">-</div></div>
+        <div class="stat-card"><div class="label">Rules Distilled</div><div class="value yellow" id="stat-rules">-</div></div>
+        <div class="stat-card"><div class="label">Attacker Elo</div><div class="value accent" id="stat-attacker-elo">-</div></div>
+    </div>
+
+    <div class="charts">
+        <div class="chart-card">
+            <h3>Elo History</h3>
+            <canvas id="elo-chart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Win Rate by Class</h3>
+            <canvas id="winrate-chart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Episodes Over Time</h3>
+            <canvas id="episodes-chart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Rule Growth</h3>
+            <canvas id="rules-chart"></canvas>
+        </div>
+    </div>
+
+    <div class="rules-section">
+        <h3>Distilled Rules</h3>
+        <div class="rule-list" id="rule-list"><div class="error">No rules yet</div></div>
+    </div>
+
+    <script>
+    const API = window.location.origin;
+    let eloChart, winrateChart, episodesChart, rulesChart;
+
+    const chartDefaults = {
+        color: '#8b8fa3',
+        borderColor: '#2a2d3a',
+        font: { family: "'SF Mono', monospace", size: 10 }
+    };
+    Chart.defaults.color = chartDefaults.color;
+    Chart.defaults.borderColor = chartDefaults.borderColor;
+
+    async function fetchJSON(path) {
+        try {
+            const res = await fetch(API + path);
+            if (!res.ok) throw new Error(res.statusText);
+            return await res.json();
+        } catch (e) {
+            console.error(`Failed to fetch ${path}:`, e);
+            return null;
+        }
+    }
+
+    async function refresh() {
+        const dot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        const [metrics, elo, episodes, rules, prompts] = await Promise.all([
+            fetchJSON('/metrics'),
+            fetchJSON('/elo/history'),
+            fetchJSON('/episodes'),
+            fetchJSON('/rules'),
+            fetchJSON('/prompts/history'),
+        ]);
+
+        if (!metrics) {
+            dot.className = 'dot offline';
+            statusText.textContent = 'API offline';
+            return;
+        }
+        dot.className = 'dot';
+        statusText.textContent = 'Connected';
+
+        // Stats
+        document.getElementById('stat-episodes').textContent = metrics.total_episodes;
+        document.getElementById('stat-secure').textContent = (metrics.secure_rate * 100).toFixed(1) + '%';
+        document.getElementById('stat-rules').textContent = metrics.rules_count;
+        const attackerElo = elo?.current?.attacker ?? 1500;
+        document.getElementById('stat-attacker-elo').textContent = attackerElo.toFixed(0);
+
+        // Elo chart
+        const eloHistory = elo?.history || [];
+        if (eloChart) eloChart.destroy();
+        eloChart = new Chart(document.getElementById('elo-chart'), {
+            type: 'line',
+            data: {
+                labels: eloHistory.map((_, i) => i + 1),
+                datasets: [
+                    { label: 'Attacker', data: eloHistory.map(e => e.attacker ?? 1500), borderColor: '#e17055', tension: 0.3, pointRadius: 2 },
+                    { label: 'Developer', data: eloHistory.map(e => e.developer ?? 1500), borderColor: '#00b894', tension: 0.3, pointRadius: 2 },
+                ]
+            },
+            options: { responsive: true, plugins: { legend: { labels: { boxWidth: 12 } } }, scales: { y: { beginAtZero: false } } }
+        });
+
+        // Win rate chart
+        const classWins = {};
+        (episodes || []).forEach(ep => {
+            const cls = ep.vulnerability_class || 'Unknown';
+            if (!classWins[cls]) classWins[cls] = { wins: 0, total: 0 };
+            classWins[cls].total++;
+            if (ep.outcome === 0) classWins[cls].wins++;
+        });
+        const classLabels = Object.keys(classWins).sort();
+        if (winrateChart) winrateChart.destroy();
+        winrateChart = new Chart(document.getElementById('winrate-chart'), {
+            type: 'bar',
+            data: {
+                labels: classLabels,
+                datasets: [{
+                    label: 'Secure Rate',
+                    data: classLabels.map(c => classWins[c].total ? (classWins[c].wins / classWins[c].total * 100) : 0),
+                    backgroundColor: classLabels.map(() => '#6c5ce7'),
+                    borderRadius: 4,
+                }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } } }
+        });
+
+        // Episodes over time
+        const epByDate = {};
+        (episodes || []).forEach(ep => {
+            const d = new Date(ep.created_at).toLocaleDateString();
+            epByDate[d] = (epByDate[d] || 0) + 1;
+        });
+        const dates = Object.keys(epByDate);
+        if (episodesChart) episodesChart.destroy();
+        episodesChart = new Chart(document.getElementById('episodes-chart'), {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [{ label: 'Episodes', data: dates.map(d => epByDate[d]), borderColor: '#74b9ff', fill: true, backgroundColor: 'rgba(116,185,255,0.1)', tension: 0.3, pointRadius: 2 }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+
+        // Rules growth
+        const ruleGrowth = {};
+        (prompts || []).forEach(p => {
+            ruleGrowth[p.version] = p.rules_count;
+        });
+        const versions = Object.keys(ruleGrowth);
+        if (rulesChart) rulesChart.destroy();
+        rulesChart = new Chart(document.getElementById('rules-chart'), {
+            type: 'line',
+            data: {
+                labels: versions.map(v => 'v' + v),
+                datasets: [{ label: 'Rules', data: versions.map(v => ruleGrowth[v]), borderColor: '#fdcb6e', fill: true, backgroundColor: 'rgba(253,203,110,0.1)', tension: 0.3, pointRadius: 2 }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+
+        // Rules list
+        const ruleList = document.getElementById('rule-list');
+        if (!rules || rules.length === 0) {
+            ruleList.innerHTML = '<div class="error">No rules yet</div>';
+        } else {
+            ruleList.innerHTML = rules.map(r => `
+                <div class="rule-item">
+                    <div class="class">${r.vulnerability_class}</div>
+                    <div class="text">${r.rule_text}</div>
+                </div>
+            `).join('');
+        }
+    }
+
+    refresh();
+    setInterval(refresh, 30000);
+    </script>
+</body>
+</html>
