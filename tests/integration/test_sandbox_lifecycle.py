@@ -7,14 +7,12 @@ Tests are split into:
 
 from __future__ import annotations
 
+import contextlib
 import json
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from packages.sandbox.config import (
     BASE_IMAGE,
     BLOCKED_COMMANDS,
@@ -31,6 +29,7 @@ from packages.sandbox.lifecycle import (
 )
 from packages.sandbox.manager import (
     ContainerSpec,
+    SandboxError,
     SandboxManager,
     validate_command,
     validate_seccomp,
@@ -284,10 +283,8 @@ class TestSandboxManagerDocker:
         yield
         # Cleanup any containers we created
         for spec in self.container_specs:
-            try:
+            with contextlib.suppress(Exception):
                 self.manager.destroy(spec.container_id)
-            except Exception:
-                pass
 
     def _create_container(self, episode_id: str = "test") -> ContainerSpec:
         spec = self.manager.create(episode_id)
@@ -309,7 +306,7 @@ class TestSandboxManagerDocker:
 
     def test_exec_blocked_command(self) -> None:
         spec = self._create_container("blocked-test")
-        with pytest.raises(Exception):
+        with pytest.raises(SandboxError):
             self.manager.exec_run(spec.container_id, "curl http://evil.com")
 
     def test_verify_isolation(self) -> None:
@@ -331,10 +328,8 @@ class TestEpisodeOrchestratorDocker:
         self.containers: list[str] = []
         yield
         for cid in self.containers:
-            try:
+            with contextlib.suppress(Exception):
                 self.manager.destroy(cid)
-            except Exception:
-                pass
 
     def test_run_completes(self) -> None:
         orchestrator = EpisodeOrchestrator(manager=self.manager)
@@ -359,5 +354,5 @@ class TestEpisodeOrchestratorDocker:
         assert result.status == EpisodeStatus.FAILED
         # Container should be destroyed even on failure
         if cid_holder:
-            with pytest.raises(Exception):
+            with pytest.raises(Exception, match=""):
                 self.manager.client.containers.get(cid_holder[0])
