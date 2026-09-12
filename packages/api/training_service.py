@@ -6,13 +6,15 @@ so all entry points behave identically.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
 from .config import Settings
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
 
-def resolve_llm_provider(settings: Settings) -> tuple[str, str | None, str]:
+def resolve_llm_provider(settings: Settings) -> tuple[str, Optional[str], str]:
     """Pick best available LLM provider. Returns (provider, api_key, model)."""
     if settings.groq_api_key:
         return "groq", settings.groq_api_key, settings.llm_model

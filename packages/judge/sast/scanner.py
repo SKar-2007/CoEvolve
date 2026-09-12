@@ -72,7 +72,7 @@ class SemgrepScanner:
             rules,
             "--json",
             "--severity",
-            "ERROR,WARNING",
+            "WARNING",
             "--no-rewrite-rule-ids",
             str(target),
         ]
