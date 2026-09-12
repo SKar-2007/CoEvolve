@@ -68,6 +68,9 @@ demo-real:
 benchmark:
 	python scripts/benchmark.py --episodes 100
 
+train:
+	python scripts/train.py --episodes 100
+
 stress:
 	python scripts/benchmark.py --episodes 1000
 
