@@ -194,7 +194,13 @@ class AttackerAgent:
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError("LLM did not return a JSON task object")
-        data = json.loads(match.group(0))
+        raw_json = match.group(0)
+        try:
+            data = json.loads(raw_json)
+        except json.JSONDecodeError:
+            # Fix single-quote JSON (some models return Python-style dicts)
+            import ast
+            data = ast.literal_eval(raw_json)
 
         # Normalize context_files: accept both string paths and dict {path, snippet}
         raw_files = data.get("context_files", [])
