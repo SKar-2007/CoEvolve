@@ -105,12 +105,33 @@ class WriteFileTool:
 
 
 class RunShellTool:
-    """Run a shell command in the workspace (sandboxed)."""
+    """Run a shell command in the workspace (sandboxed).
+
+    SECURITY: the BLOCKED filter below is defense-in-depth only. The real
+    security boundary is the Docker sandbox isolation (see
+    packages/sandbox/manager.py). Never rely on this blocklist alone when
+    running outside a container.
+    """
 
     name = "run_shell"
     description = "Run a shell command. Args: command (str), timeout (int, optional, default 30)"
 
-    BLOCKED = frozenset({"rm -rf /", "mkfs", "dd if=", "> /dev/sda"})
+    BLOCKED = frozenset(
+        {
+            "rm -rf /",
+            "mkfs",
+            "dd if=",
+            "> /dev/sda",
+            "shutdown",
+            "reboot",
+            "halt",
+            ":(){:|:&};:",
+            "chmod -R 777 /",
+            "chown -R",
+            "> /dev/sd",
+            "mkfs.ext",
+        }
+    )
 
     def __init__(self, workspace: Path, timeout: int = 30) -> None:
         self.workspace = workspace
@@ -448,20 +469,6 @@ class ReActDeveloperAgent:
     @staticmethod
     def _format_task(task: dict[str, Any]) -> str:
         """Format a task dict into a user prompt."""
-        lines = [f"TASK: {task.get('task_description', '')}"]
-        context_files = task.get("context_files", [])
-        if context_files:
-            file_strs = []
-            for f in context_files:
-                if isinstance(f, str):
-                    file_strs.append(f)
-                elif isinstance(f, dict):
-                    path = f.get("path", "unknown")
-                    snippet = f.get("snippet", "")
-                    file_strs.append(f"{path}: {snippet}" if snippet else path)
-                else:
-                    file_strs.append(getattr(f, "path", str(f)))
-            lines.append(f"CONTEXT FILES: {', '.join(file_strs)}")
-        if task.get("acceptance_criteria"):
-            lines.append(f"ACCEPTANCE CRITERIA: {task['acceptance_criteria']}")
-        return "\n".join(lines)
+        from .formatting import format_task
+
+        return format_task(task)

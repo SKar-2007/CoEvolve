@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -196,8 +199,6 @@ class GeminiClient(LLMClient):
             ) from exc
         client = genai.Client(api_key=self._api_key)
 
-        import time
-
         for attempt in range(3):
             try:
                 response = client.models.generate_content(
@@ -301,28 +302,25 @@ class MockClient(LLMClient):
         )
 
     def _mock_attacker_response(self, user: str) -> str:
-        import json
         task = {
             "task_description": "Create a SQL injection vulnerability in a login endpoint",
             "vulnerability_class": "SQLi",
             "difficulty_tier": 2,
             "target_file": "app.py",
-            "vulnerable_code": 'query = f"SELECT * FROM users WHERE username=\'{username}\' AND password=\'{password}\'"',
+            "vulnerable_code": "query = f\"SELECT * FROM users WHERE username='{username}' AND password='{password}'\"",
             "expected_impact": "Bypass authentication or extract data",
         }
         return json.dumps(task)
 
     def _mock_developer_response(self, user: str) -> str:
-        import json
         patch = {
             "file_path": "app.py",
-            "diff": '- query = f"SELECT * FROM users WHERE username=\'{username}\' AND password=\'{password}\'"\n+ query = "SELECT * FROM users WHERE username = ? AND password = ?"\n+ params = (username, password)',
+            "diff": "- query = f\"SELECT * FROM users WHERE username='{username}' AND password='{password}'\"\n+ query = \"SELECT * FROM users WHERE username = ? AND password = ?\"\n+ params = (username, password)",
             "explanation": "Use parameterized queries to prevent SQL injection",
         }
         return json.dumps(patch)
 
     def _mock_distiller_response(self, user: str) -> str:
-        import json
         rule = {
             "rule_text": "Always use parameterized queries for SQL operations. Never interpolate user input into SQL strings.",
             "vulnerability_class": "SQLi",

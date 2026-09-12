@@ -28,6 +28,25 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class JudgeProtocol(Protocol):
+    """Structural type for the hybrid judge (avoids Any)."""
+
+    def evaluate(self, patch_text: str, vulnerability_class: str, **kwargs: Any) -> Any: ...
+
+
+class EloCalculatorProtocol(Protocol):
+    """Structural type for the Elo calculator."""
+
+    def update_pair(self, attacker: float, developer: float, j: int) -> Any: ...
+
+
+class PromptStoreProtocol(Protocol):
+    """Structural type for the prompt store."""
+
+    def rules(self) -> list[Any]: ...
+    def add_rule(self, rule: Any) -> Any: ...
+
+
 class StepReporter(Protocol):
     """Protocol for receiving step-by-step agent progress notifications."""
 
@@ -36,12 +55,19 @@ class StepReporter(Protocol):
     def on_llm_call(self, agent: str, system: str, user: str, response: LLMResponse) -> None: ...
     def on_sast_result(self, matched: bool, findings: list[str]) -> None: ...
     def on_dast_result(self, success: bool, details: str) -> None: ...
-    def on_elo_update(self, attacker_before: float, developer_before: float, attacker_after: float, developer_after: float) -> None: ...
+    def on_elo_update(
+        self,
+        attacker_before: float,
+        developer_before: float,
+        attacker_after: float,
+        developer_after: float,
+    ) -> None: ...
     def on_rule_distilled(self, rule_text: str, accepted: bool) -> None: ...
     def on_regressions(self, tested: int, regressed: int) -> None: ...
     def on_error(self, agent: str, error: str) -> None: ...
     def on_episode_start(self, episode_id: str, config: Any) -> None: ...
     def on_episode_end(self, trace: Any) -> None: ...
+
 
 # Lazy telemetry import — graceful if prometheus_client not installed
 _telemetry_available = False
@@ -114,9 +140,9 @@ class TrainingLoop:
         self,
         llm: LLMClient,
         *,
-        judge: Any = None,
-        elo_calculator: Any = None,
-        prompt_store: Any = None,
+        judge: JudgeProtocol | None = None,
+        elo_calculator: EloCalculatorProtocol | None = None,
+        prompt_store: PromptStoreProtocol | None = None,
         archive: HistoricalArchive | None = None,
         prompt_version: int = 0,
         use_react: bool = False,
@@ -129,29 +155,23 @@ class TrainingLoop:
         # Wrap LLM with reporting callback if a reporter is provided
         if reporter is not None:
             from .llm import ReportingLLMClient
-            reporting_llm = ReportingLLMClient(llm, callback=self._make_llm_callback())
-            self.attacker = AttackerAgent(reporting_llm)
+
+            reporting_llm: LLMClient = ReportingLLMClient(llm, callback=self._make_llm_callback())
         else:
-            self.attacker = AttackerAgent(llm)
+            reporting_llm = llm
+        self.attacker = AttackerAgent(reporting_llm)
 
         if use_react:
             workspace = Path(workspace_dir)
             workspace.mkdir(parents=True, exist_ok=True)
-            if reporter is not None:
-                self.developer: Any = ReActDeveloperAgent(reporting_llm, workspace=workspace)
-            else:
-                self.developer = ReActDeveloperAgent(llm, workspace=workspace)
+            self.developer: DeveloperAgent | ReActDeveloperAgent = ReActDeveloperAgent(
+                reporting_llm, workspace=workspace
+            )
             logger.info("Using ReAct Developer Agent (tool-use enabled)")
         else:
-            if reporter is not None:
-                self.developer = DeveloperAgent(reporting_llm)
-            else:
-                self.developer = DeveloperAgent(llm)
+            self.developer = DeveloperAgent(reporting_llm)
 
-        if reporter is not None:
-            self.distiller = DistillerAgent(reporting_llm)
-        else:
-            self.distiller = DistillerAgent(llm)
+        self.distiller = DistillerAgent(reporting_llm)
 
         # Pluggable dependencies — import lazily to avoid circular imports
         if judge is not None:
@@ -233,7 +253,11 @@ class TrainingLoop:
 
             # 1. Attacker generates a task
             logger.info("[episode=%s] Attacker generating task (tier=%d)", episode_id, mapping.tier)
-            self._notify("on_step_start", "attacker", f"generating adversarial task (tier {mapping.tier}/10)...")
+            self._notify(
+                "on_step_start",
+                "attacker",
+                f"generating adversarial task (tier {mapping.tier}/10)...",
+            )
             s = time.time()
             task = self.attacker.generate(
                 vulnerability_class=config.vulnerability_class,
@@ -242,19 +266,33 @@ class TrainingLoop:
                 context_hint=config.context_hint,
                 language=config.language,
             )
-            self._notify("on_step_end", "attacker", f"task generated — {task.task_description[:60]}", time.time() - s)
+            self._notify(
+                "on_step_end",
+                "attacker",
+                f"task generated — {task.task_description[:60]}",
+                time.time() - s,
+            )
             trace.task = task
 
             # 2. Developer generates a patch
             logger.info("[episode=%s] Developer generating patch", episode_id)
             current_rules = self.prompt_store.rules()
-            self._notify("on_step_start", "developer", f"reading code & building patch ({len(current_rules)} rules active)...")
+            self._notify(
+                "on_step_start",
+                "developer",
+                f"reading code & building patch ({len(current_rules)} rules active)...",
+            )
             s = time.time()
             patch_text = self.developer.execute(
                 task=task.as_dict(),
                 rules=[r.rule_text for r in current_rules],
             )
-            self._notify("on_step_end", "developer", f"patch built ({len(patch_text)} chars)", time.time() - s)
+            self._notify(
+                "on_step_end",
+                "developer",
+                f"patch built ({len(patch_text)} chars)",
+                time.time() - s,
+            )
             trace.patch_text = patch_text
 
             # 3. Judge evaluates the patch (SAST + DAST)
@@ -273,7 +311,9 @@ class TrainingLoop:
 
             outcome_text = "VULNERABLE" if verdict.j == 1 else "SECURE"
             self._notify("on_step_end", "judge", f"outcome: {outcome_text}", time.time() - s)
-            self._notify("on_sast_result", verdict.sast.matched, [f.message for f in verdict.sast.findings])
+            self._notify(
+                "on_sast_result", verdict.sast.matched, [f.message for f in verdict.sast.findings]
+            )
 
             # 4. Update Elo ratings
             new_ratings = self.elo.update_pair(
@@ -285,8 +325,10 @@ class TrainingLoop:
 
             self._notify(
                 "on_elo_update",
-                current_ratings[0], current_ratings[1],
-                new_ratings.attacker, new_ratings.developer,
+                current_ratings[0],
+                current_ratings[1],
+                new_ratings.attacker,
+                new_ratings.developer,
             )
 
             # Emit telemetry for Elo update
@@ -295,18 +337,24 @@ class TrainingLoop:
             # 5. If exploitable (developer lost), distill a rule and check regression
             if verdict.j == 1:
                 logger.info("[episode=%s] Vulnerability found — distilling rule", episode_id)
-                self._notify("on_step_start", "distiller", "distilling failure into defensive rule...")
+                self._notify(
+                    "on_step_start", "distiller", "distilling failure into defensive rule..."
+                )
                 s = time.time()
                 rule = self.distiller.distill(
                     trace=verdict.as_dict(),
                     trace_id=verdict.trace_id,
                 )
                 trace.distilled_rule = rule
-                self._notify("on_step_end", "distiller", f"rule: {rule.rule_text[:60]}...", time.time() - s)
+                self._notify(
+                    "on_step_end", "distiller", f"rule: {rule.rule_text[:60]}...", time.time() - s
+                )
 
                 if rule.is_valid:
                     # Check regression before accepting
-                    self._notify("on_step_start", "regression", "checking rule against historical tasks...")
+                    self._notify(
+                        "on_step_start", "regression", "checking rule against historical tasks..."
+                    )
                     s = time.time()
                     guard = RegressionGuard(
                         archive=self.archive,
@@ -318,8 +366,15 @@ class TrainingLoop:
                         all_rules=[r.rule_text for r in self.prompt_store.rules()],
                     )
                     trace.regression_passed = approved
-                    self._notify("on_regressions", report.get("tested", 0), report.get("regressions", 0))
-                    self._notify("on_step_end", "regression", f"{'passed' if approved else 'failed'} ({report.get('tested', 0)} tasks)", time.time() - s)
+                    self._notify(
+                        "on_regressions", report.get("tested", 0), report.get("regressions", 0)
+                    )
+                    self._notify(
+                        "on_step_end",
+                        "regression",
+                        f"{'passed' if approved else 'failed'} ({report.get('tested', 0)} tasks)",
+                        time.time() - s,
+                    )
 
                     if approved:
                         self.prompt_store.add_rule(rule)

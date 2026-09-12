@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -44,51 +45,72 @@ class APIKey:
 
 
 class APIKeyStore:
-    """In-memory API key store. Replace with DB-backed store in production."""
+    """Thread-safe in-memory API key store.
+
+    NOTE: keys are lost on restart and are not shared across uvicorn
+    workers. Replace with a DB-backed store in production when running
+    with --workers > 1 or REQUIRE_AUTH=true.
+    """
 
     def __init__(self) -> None:
         self._keys: dict[str, APIKey] = {}
+        self._lock = threading.Lock()
 
     def create_key(self, name: str, tier: str = "standard") -> APIKey:
         key = f"cov_{secrets.token_urlsafe(32)}"
         api_key = APIKey(key=key, name=name, tier=tier)
-        self._keys[api_key.key_hash] = api_key
+        with self._lock:
+            self._keys[api_key.key_hash] = api_key
         return api_key
 
     def validate(self, key: str) -> APIKey | None:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
-        api_key = self._keys.get(key_hash)
-        if api_key and not api_key.disabled:
-            api_key.last_used = time.time()
-            return api_key
+        with self._lock:
+            api_key = self._keys.get(key_hash)
+            if api_key and not api_key.disabled:
+                api_key.last_used = time.time()
+                return api_key
         return None
 
     def disable(self, key: str) -> bool:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
-        if key_hash in self._keys:
-            self._keys[key_hash].disabled = True
-            return True
+        with self._lock:
+            if key_hash in self._keys:
+                self._keys[key_hash].disabled = True
+                return True
         return False
 
     def list_keys(self) -> list[APIKey]:
-        return list(self._keys.values())
+        with self._lock:
+            return list(self._keys.values())
 
     def get_key(self, key: str) -> APIKey | None:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
-        return self._keys.get(key_hash)
+        with self._lock:
+            return self._keys.get(key_hash)
 
 
 # Global key store
 _key_store: APIKeyStore | None = None
+_key_store_lock = threading.Lock()
 
 
 def get_key_store() -> APIKeyStore:
     global _key_store
     if _key_store is None:
-        _key_store = APIKeyStore()
-        # Create a default admin key for development
-        _key_store.create_key("dev-admin", tier="admin")
+        with _key_store_lock:
+            if _key_store is None:
+                _key_store = APIKeyStore()
+                # Create a default admin key for development
+                _key_store.create_key("dev-admin", tier="admin")
     return _key_store
+
+
+def reset_key_store() -> None:
+    """Reset global key store (for testing)."""
+    global _key_store
+    with _key_store_lock:
+        _key_store = None
 
 
 # ---------------------------------------------------------------------------
@@ -113,56 +135,72 @@ TIER_LIMITS = {
 
 
 class RateLimiter:
-    """Sliding window rate limiter."""
+    """Thread-safe sliding window rate limiter.
+
+    NOTE: state is per-process. With multiple uvicorn workers the effective
+    limit is multiplied by the worker count. Use a Redis-backed limiter
+    (e.g. sliding window in Redis) in production when running --workers > 1.
+    """
 
     def __init__(self) -> None:
         self._windows: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
 
     def is_allowed(self, key: str, tier: str = "standard") -> tuple[bool, dict[str, Any]]:
         config = TIER_LIMITS.get(tier, TIER_LIMITS["standard"])
         now = time.time()
-        window = self._windows[key]
+        with self._lock:
+            window = self._windows[key]
 
-        # Remove entries older than 1 hour
-        window[:] = [t for t in window if now - t < 3600]
+            # Remove entries older than 1 hour
+            window[:] = [t for t in window if now - t < 3600]
 
-        # Count requests in last minute
-        recent = sum(1 for t in window if now - t < 60)
+            # Count requests in last minute
+            recent = sum(1 for t in window if now - t < 60)
 
-        # Check limits
-        if recent >= config.requests_per_minute:
-            retry_after = 60 - (now - window[-(config.requests_per_minute)])
-            return False, {
+            # Check limits
+            if recent >= config.requests_per_minute:
+                idx = max(0, len(window) - config.requests_per_minute)
+                retry_after = max(1.0, 60 - (now - window[idx]))
+                return False, {
+                    "limit": config.requests_per_minute,
+                    "remaining": 0,
+                    "reset": int(now + retry_after),
+                    "retry_after": int(retry_after),
+                }
+
+            # Check hourly limit
+            if len(window) >= config.requests_per_hour:
+                return False, {
+                    "limit": config.requests_per_hour,
+                    "remaining": 0,
+                    "reset": int(now + 3600),
+                    "retry_after": 3600,
+                }
+
+            window.append(now)
+            return True, {
                 "limit": config.requests_per_minute,
-                "remaining": 0,
-                "reset": int(now + retry_after),
-                "retry_after": int(retry_after),
+                "remaining": config.requests_per_minute - recent - 1,
+                "reset": int(now + 60),
             }
 
-        # Check hourly limit
-        if len(window) >= config.requests_per_hour:
-            return False, {
-                "limit": config.requests_per_hour,
-                "remaining": 0,
-                "reset": int(now + 3600),
-                "retry_after": 3600,
-            }
-
-        window.append(now)
-        return True, {
-            "limit": config.requests_per_minute,
-            "remaining": config.requests_per_minute - recent - 1,
-            "reset": int(now + 60),
-        }
+    def reset(self) -> None:
+        """Clear all windows (for testing)."""
+        with self._lock:
+            self._windows.clear()
 
 
 _rate_limiter: RateLimiter | None = None
+_rate_limiter_lock = threading.Lock()
 
 
 def get_rate_limiter() -> RateLimiter:
     global _rate_limiter
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter()
+        with _rate_limiter_lock:
+            if _rate_limiter is None:
+                _rate_limiter = RateLimiter()
     return _rate_limiter
 
 
@@ -197,6 +235,27 @@ async def require_api_key(
 ) -> APIKey:
     """Require a valid API key. Raises 401 if missing or invalid."""
     if api_key is None:
+        raise HTTPException(status_code=401, detail="API key required")
+    return api_key
+
+
+async def require_api_key_if_enabled(
+    request: Request,
+    api_key: APIKey | None = Security(get_api_key),
+) -> APIKey | None:
+    """Enforce API-key auth only when REQUIRE_AUTH=true.
+
+    This keeps backwards compatibility for existing deployments/tests
+    (default REQUIRE_AUTH=false) while allowing production to enforce auth
+    on mutating endpoints by setting REQUIRE_AUTH=true.
+    """
+    try:
+        from .config import get_settings
+
+        required = get_settings().require_auth
+    except Exception:
+        required = False
+    if required and api_key is None:
         raise HTTPException(status_code=401, detail="API key required")
     return api_key
 

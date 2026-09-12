@@ -148,15 +148,28 @@ class TaskQueue:
         return len(self._memory_queue)
 
     def list_jobs(self, limit: int = 50) -> list[TrainingJob]:
-        """List recent jobs."""
+        """List recent jobs (uses SCAN, never blocking KEYS)."""
         if self._redis:
-            keys = self._redis.keys(f"{self.STATUS_PREFIX}*")
             jobs: list[TrainingJob] = []
-            for key in keys[-limit:]:
-                job_id = key.replace(self.STATUS_PREFIX, "")
-                job = self.get_job(job_id)
-                if job:
-                    jobs.append(job)
+            try:
+                cursor: int = 0
+                seen = 0
+                while True:
+                    cursor, keys = self._redis.scan(
+                        cursor=cursor, match=f"{self.STATUS_PREFIX}*", count=100
+                    )
+                    for key in keys:
+                        if seen >= limit * 2:  # bound work; final sort+slice applies limit
+                            break
+                        job_id = key.replace(self.STATUS_PREFIX, "")
+                        job = self.get_job(job_id)
+                        if job:
+                            jobs.append(job)
+                        seen += 1
+                    if cursor == 0:
+                        break
+            except Exception:
+                logger.warning("Redis SCAN failed in list_jobs", exc_info=True)
             return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
         return sorted(
             self._memory_results.values(),

@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from .auth import APIKey, require_api_key_if_enabled
 from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
@@ -32,9 +31,12 @@ from .schemas import (
     TrainingRunResponse,
     VulnerabilityCoverage,
 )
-
-
-import logging
+from .training_service import (
+    get_current_ratings,
+    get_prompt_version,
+    persist_episode,
+    resolve_llm_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _seed_elo()
         logger.info("Database connected successfully")
     except Exception as exc:
+        # Log and continue so /health stays available; training endpoints
+        # will surface DB errors per-request. Fail-fast is handled by
+        # docker-compose.prod.yml required-var validation instead.
         logger.error("Database connection failed: %s", exc)
         logger.error("Check your DATABASE_URL environment variable")
     yield
@@ -59,13 +64,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+def _configure_cors() -> None:
+    settings = get_settings()
+    origins = settings.cors_origin_list
+    if "*" in origins:
+        # Browsers reject allow_credentials with "*"; disable credentials
+        # in wildcard mode (dev default). Set CORS_ORIGINS to explicit
+        # origins in production to re-enable credentials.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+
+_configure_cors()
 
 
 def _seed_elo() -> None:
@@ -108,7 +132,7 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -156,7 +180,7 @@ def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
 # ---------------------------------------------------------------------------
 @app.get("/rules", response_model=list[RuleRead])
 def list_rules(
-    vuln_class: Optional[str] = Query(None),
+    vuln_class: str | None = Query(None),
     approved_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -238,21 +262,27 @@ def get_vulnerability_coverage(db: Session = Depends(get_db)) -> list[Vulnerabil
     for row in rows:
         total = row.total or 0
         detected = row.detected or 0
-        result.append(VulnerabilityCoverage(
-            vulnerability_class=row.vulnerability_class,
-            total_episodes=total,
-            detected_count=detected,
-            secure_count=row.secure or 0,
-            coverage_rate=(total - detected) / total if total else 0.0,
-        ))
+        result.append(
+            VulnerabilityCoverage(
+                vulnerability_class=row.vulnerability_class,
+                total_episodes=total,
+                detected_count=detected,
+                secure_count=row.secure or 0,
+                coverage_rate=(total - detected) / total if total else 0.0,
+            )
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
-# Episodes — stop
+# Episodes — stop (auth enforced when REQUIRE_AUTH=true)
 # ---------------------------------------------------------------------------
 @app.post("/episodes/{episode_id}/stop", response_model=EpisodeStopResponse)
-def stop_episode(episode_id: str, db: Session = Depends(get_db)) -> EpisodeStopResponse:
+def stop_episode(
+    episode_id: str,
+    db: Session = Depends(get_db),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> EpisodeStopResponse:
     ep = db.get(EpisodeRecord, episode_id)
     if not ep:
         raise HTTPException(404, "Episode not found")
@@ -273,10 +303,13 @@ def stop_episode(episode_id: str, db: Session = Depends(get_db)) -> EpisodeStopR
 
 
 # ---------------------------------------------------------------------------
-# Config — update settings
+# Config — update settings (auth enforced when REQUIRE_AUTH=true)
 # ---------------------------------------------------------------------------
 @app.post("/config")
-def update_config(body: ConfigUpdateRequest) -> dict[str, str]:
+def update_config(
+    body: ConfigUpdateRequest,
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> dict[str, str]:
     settings = get_settings()
     updated = []
     if body.llm_model is not None:
@@ -293,40 +326,26 @@ def update_config(body: ConfigUpdateRequest) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Training — Synchronous Run
 # ---------------------------------------------------------------------------
+# NOTE: this is a sync `def` endpoint, so FastAPI runs it in a threadpool —
+# it does not block the async event loop. For long-running jobs prefer the
+# TaskQueue/worker path (packages/api/task_queue.py + worker.py).
 @app.post("/training/run", response_model=TrainingRunResponse)
 def run_training_episode(
-    body: TrainingRunRequest, db: Session = Depends(get_db)
+    body: TrainingRunRequest,
+    db: Session = Depends(get_db),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> TrainingRunResponse:
     """Execute one co-evolutionary training episode (blocks until done)."""
     from ..agents.llm import build_client
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
-    elo_record = db.get(EloRecord, "global")
-    current_ratings = (
-        (elo_record.attacker_rating, elo_record.developer_rating)
-        if elo_record
-        else (1500.0, 1500.0)
-    )
-
-    latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-    prompt_version = latest_prompt.version if latest_prompt else 0
+    current_ratings = get_current_ratings(db)
+    prompt_version = get_prompt_version(db)
 
     settings = get_settings()
-    # Pick best available provider
-    if settings.groq_api_key:
-        provider, key = "groq", settings.groq_api_key
-    elif settings.anthropic_api_key:
-        provider, key = "anthropic", settings.anthropic_api_key
-    elif settings.openai_api_key:
-        provider, key = "openai", settings.openai_api_key
-    elif settings.huggingface_api_key:
-        provider, key = "huggingface", settings.huggingface_api_key
-    elif settings.openrouter_api_key:
-        provider, key = "openrouter", settings.openrouter_api_key
-    else:
-        provider, key = "mock", None
+    provider, key, model = resolve_llm_provider(settings)
 
-    llm = build_client(provider, settings.llm_model, api_key=key)
+    llm = build_client(provider, model, api_key=key)
 
     loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)
     config = EpisodeConfig(
@@ -337,47 +356,12 @@ def run_training_episode(
     )
     trace = loop.run_episode(config, current_ratings=current_ratings)
 
-    ep = EpisodeRecord(
-        id=trace.episode_id,
-        status="completed" if not trace.error else "failed",
+    persist_episode(
+        db,
+        trace=trace,
         vulnerability_class=body.vulnerability_class,
-        difficulty_tier=trace.difficulty_tier,
-        outcome=trace.judge_outcome,
-        task_description=trace.task.task_description if trace.task else "",
-        patch_text=trace.patch_text,
-        judge_verdict=trace.judge_verdict,
-        attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-        developer_rating=trace.elo_after.get("developer", current_ratings[1]),
-        prompt_version=trace.prompt_version,
-        error=trace.error or None,
+        current_ratings=current_ratings,
     )
-    db.add(ep)
-
-    if elo_record:
-        elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
-        elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
-        elo_record.episodes_played += 1
-    else:
-        db.add(EloRecord(
-            id="global",
-            attacker_rating=trace.elo_after.get("attacker", 1500.0),
-            developer_rating=trace.elo_after.get("developer", 1500.0),
-            episodes_played=1,
-        ))
-
-    if trace.distilled_rule and trace.regression_passed:
-        rule = trace.distilled_rule
-        db.add(RuleRecord(
-            rule_text=rule.rule_text,
-            vulnerability_class=rule.vulnerability_class,
-            source_pattern=rule.source_pattern,
-            recommended_fix=rule.recommended_fix,
-            source_trace_id=rule.source_trace_id,
-            prompt_version=trace.prompt_version,
-            approved=True,
-        ))
-
-    db.commit()
 
     return TrainingRunResponse(
         episode_id=trace.episode_id,
@@ -410,33 +394,16 @@ async def training_stream(
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
     async def event_generator():
-        from .database import get_session_factory
-
-        factory = get_session_factory()
-        db = factory()
+        db = get_session_factory()()
 
         try:
-            elo_record = db.get(EloRecord, "global")
-            current_ratings = (
-                (elo_record.attacker_rating, elo_record.developer_rating)
-                if elo_record
-                else (1500.0, 1500.0)
-            )
-
-            latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-            prompt_version = latest_prompt.version if latest_prompt else 0
+            current_ratings = get_current_ratings(db)
+            prompt_version = get_prompt_version(db)
 
             settings = get_settings()
-            if settings.groq_api_key:
-                provider, key = "groq", settings.groq_api_key
-            elif settings.anthropic_api_key:
-                provider, key = "anthropic", settings.anthropic_api_key
-            elif settings.openai_api_key:
-                provider, key = "openai", settings.openai_api_key
-            else:
-                provider, key = "mock", None
+            provider, key, model = resolve_llm_provider(settings)
 
-            llm = build_client(provider, settings.llm_model, api_key=key)
+            llm = build_client(provider, model, api_key=key)
             config = EpisodeConfig(
                 vulnerability_class=vulnerability_class,
                 language=language,
@@ -447,24 +414,54 @@ async def training_stream(
             yield f"data: {json.dumps({'type': 'start', 'vuln': vulnerability_class, 'lang': language, 'elo': list(current_ratings)})}\n\n"
             await asyncio.sleep(0.1)
 
-            # Run in thread pool
+            # Run blocking training loop in a threadpool; do not hold the
+            # DB connection open longer than needed — persist after completion.
             loop_inst = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
 
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(loop_inst.run_episode, config, current_ratings=current_ratings)
-                trace = await asyncio.get_event_loop().run_in_executor(None, future.result)
+            trace = await asyncio.to_thread(
+                loop_inst.run_episode, config, current_ratings=current_ratings
+            )
 
             outcome_text = "SECURE" if trace.judge_outcome == 0 else "VULNERABLE"
 
             steps = [
-                {"type": "agent", "agent": "attacker", "status": "done", "message": f"Task generated (tier {trace.difficulty_tier}/10)"},
-                {"type": "agent", "agent": "developer", "status": "done", "message": f"Patch built ({len(trace.patch_text)} chars)"},
-                {"type": "agent", "agent": "judge", "status": "done", "message": f"Outcome: {outcome_text}"},
+                {
+                    "type": "agent",
+                    "agent": "attacker",
+                    "status": "done",
+                    "message": f"Task generated (tier {trace.difficulty_tier}/10)",
+                },
+                {
+                    "type": "agent",
+                    "agent": "developer",
+                    "status": "done",
+                    "message": f"Patch built ({len(trace.patch_text)} chars)",
+                },
+                {
+                    "type": "agent",
+                    "agent": "judge",
+                    "status": "done",
+                    "message": f"Outcome: {outcome_text}",
+                },
             ]
             if trace.distilled_rule and trace.regression_passed:
-                steps.append({"type": "agent", "agent": "distiller", "status": "done", "message": f"Rule: {trace.distilled_rule.rule_text[:80]}"})
+                steps.append(
+                    {
+                        "type": "agent",
+                        "agent": "distiller",
+                        "status": "done",
+                        "message": f"Rule: {trace.distilled_rule.rule_text[:80]}",
+                    }
+                )
             else:
-                steps.append({"type": "agent", "agent": "distiller", "status": "skip", "message": "No rule distilled"})
+                steps.append(
+                    {
+                        "type": "agent",
+                        "agent": "distiller",
+                        "status": "skip",
+                        "message": "No rule distilled",
+                    }
+                )
 
             for step in steps:
                 yield f"data: {json.dumps(step)}\n\n"
@@ -472,48 +469,13 @@ async def training_stream(
 
             yield f"data: {json.dumps({'type': 'elo', 'before': trace.elo_before, 'after': trace.elo_after})}\n\n"
 
-            # Persist
-            ep = EpisodeRecord(
-                id=trace.episode_id,
-                status="completed" if not trace.error else "failed",
+            # Persist via shared helper (single source of truth)
+            persist_episode(
+                db,
+                trace=trace,
                 vulnerability_class=vulnerability_class,
-                difficulty_tier=trace.difficulty_tier,
-                outcome=trace.judge_outcome,
-                task_description=trace.task.task_description if trace.task else "",
-                patch_text=trace.patch_text,
-                judge_verdict=trace.judge_verdict,
-                attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-                developer_rating=trace.elo_after.get("developer", current_ratings[1]),
-                prompt_version=trace.prompt_version,
-                error=trace.error or None,
+                current_ratings=current_ratings,
             )
-            db.add(ep)
-
-            if elo_record:
-                elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
-                elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
-                elo_record.episodes_played += 1
-            else:
-                db.add(EloRecord(
-                    id="global",
-                    attacker_rating=trace.elo_after.get("attacker", 1500.0),
-                    developer_rating=trace.elo_after.get("developer", 1500.0),
-                    episodes_played=1,
-                ))
-
-            if trace.distilled_rule and trace.regression_passed:
-                rule = trace.distilled_rule
-                db.add(RuleRecord(
-                    rule_text=rule.rule_text,
-                    vulnerability_class=rule.vulnerability_class,
-                    source_pattern=rule.source_pattern,
-                    recommended_fix=rule.recommended_fix,
-                    source_trace_id=rule.source_trace_id,
-                    prompt_version=trace.prompt_version,
-                    approved=True,
-                ))
-
-            db.commit()
 
             yield f"data: {json.dumps({'type': 'complete', 'episode_id': trace.episode_id, 'outcome': trace.judge_outcome, 'rule_distilled': trace.distilled_rule is not None and trace.regression_passed, 'duration_s': trace.duration_s})}\n\n"
 
@@ -525,5 +487,9 @@ async def training_stream(
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

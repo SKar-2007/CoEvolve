@@ -38,7 +38,7 @@ class TrainingWorker:
         self._llm: Any = None
 
     def _ensure_initialized(self) -> None:
-        """Lazy-init queue and LLM client."""
+        """Lazy-init queue and LLM client (uses shared resolve_llm_provider)."""
         if self._queue is not None:
             return
 
@@ -49,13 +49,21 @@ class TrainingWorker:
         from packages.agents.llm import build_client
         from packages.api.config import get_settings
         from packages.api.task_queue import TaskQueue
+        from packages.api.training_service import resolve_llm_provider
 
         settings = get_settings()
-        self._queue = TaskQueue(redis_url=settings.redis_url)
+        # Prefer explicit REDIS_URL, fall back to UPSTASH_REDIS_URL.
+        redis_url = settings.resolved_redis_url or os.getenv("REDIS_URL", "")
+        self._queue = TaskQueue(redis_url=redis_url or None)
 
-        provider = os.getenv("LLM_PROVIDER", "openrouter")
-        model = os.getenv("LLM_MODEL", "deepseek/deepseek-chat-v3-0324")
-        self._llm = build_client(provider, model)
+        provider, key, model = resolve_llm_provider(settings)
+        # Allow explicit LLM_PROVIDER/LLM_MODEL env override for ops flexibility.
+        provider = os.getenv("LLM_PROVIDER", provider)
+        model = os.getenv("LLM_MODEL", model)
+        api_key = key
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY", key or "")
+        self._llm = build_client(provider, model, api_key=api_key)
 
         logger.info(
             "Worker initialized: provider=%s model=%s redis=%s",
@@ -95,25 +103,18 @@ class TrainingWorker:
         try:
             from packages.agents.cost_tracking import CostTrackingClient
             from packages.agents.training_loop import EpisodeConfig, TrainingLoop
-
-            # Get current Elo from DB
             from packages.api.database import get_session_factory
-            from packages.api.models import EloRecord
+            from packages.api.training_service import (
+                get_current_ratings,
+                get_prompt_version,
+                persist_episode,
+            )
 
+            # Get current Elo + prompt version via shared helpers
             db = get_session_factory()()
             try:
-                elo_record = db.get(EloRecord, "global")
-                current_ratings = (
-                    (elo_record.attacker_rating, elo_record.developer_rating)
-                    if elo_record
-                    else (1500.0, 1500.0)
-                )
-
-                # Get prompt version
-                from packages.api.models import PromptRecord
-
-                latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-                prompt_version = latest_prompt.version if latest_prompt else 0
+                current_ratings = get_current_ratings(db)
+                prompt_version = get_prompt_version(db)
             finally:
                 db.close()
 
@@ -128,54 +129,15 @@ class TrainingWorker:
             )
             trace = loop.run_episode(config, current_ratings=current_ratings)
 
-            # Persist results to DB
+            # Persist results to DB via shared helper (single source of truth)
             db = get_session_factory()()
             try:
-                from packages.api.models import EpisodeRecord, RuleRecord
-
-                ep = EpisodeRecord(
-                    id=trace.episode_id,
-                    status="completed" if not trace.error else "failed",
+                persist_episode(
+                    db,
+                    trace=trace,
                     vulnerability_class=job.vulnerability_class,
-                    difficulty_tier=trace.difficulty_tier,
-                    outcome=trace.judge_outcome,
-                    task_description=trace.task.task_description if trace.task else "",
-                    patch_text=trace.patch_text,
-                    judge_verdict=trace.judge_verdict,
-                    attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-                    developer_rating=trace.elo_after.get("developer", current_ratings[1]),
-                    prompt_version=trace.prompt_version,
-                    error=trace.error or None,
+                    current_ratings=current_ratings,
                 )
-                db.add(ep)
-
-                # Update global Elo
-                elo_record = db.get(EloRecord, "global")
-                if elo_record:
-                    elo_record.attacker_rating = trace.elo_after.get(
-                        "attacker", elo_record.attacker_rating
-                    )
-                    elo_record.developer_rating = trace.elo_after.get(
-                        "developer", elo_record.developer_rating
-                    )
-                    elo_record.episodes_played += 1
-
-                # Record distilled rule
-                if trace.distilled_rule and trace.regression_passed:
-                    rule = trace.distilled_rule
-                    db.add(
-                        RuleRecord(
-                            rule_text=rule.rule_text,
-                            vulnerability_class=rule.vulnerability_class,
-                            source_pattern=rule.source_pattern,
-                            recommended_fix=rule.recommended_fix,
-                            source_trace_id=rule.source_trace_id,
-                            prompt_version=trace.prompt_version,
-                            approved=True,
-                        )
-                    )
-
-                db.commit()
             finally:
                 db.close()
 

@@ -8,12 +8,15 @@ version = "0.1.0"
 description = "CoEvolve — Adversarial Training as a Service"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.100",
-    "uvicorn>=0.23",
+    # Single source of truth — keep in sync with requirements.txt
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
     "sqlalchemy>=2.0",
-    "pydantic-settings>=2.0",
-    "click>=8.0",
-    "rich>=13.0",
+    "psycopg2-binary>=2.9",
+    "python-dotenv>=1.0",
+    "openai>=1.30",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +25,19 @@ dev = [
     "mypy",
     "pytest",
     "pytest-cov",
+    "pytest-asyncio",
+    "httpx",
+]
+llm = [
+    "anthropic",
+    "google-genai",
+]
+sandbox = [
+    "docker",
+    "redis",
+]
+telemetry = [
+    "prometheus-client",
 ]
 
 [project.scripts]
