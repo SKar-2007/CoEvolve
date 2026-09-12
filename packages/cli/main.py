@@ -25,6 +25,7 @@ def cli() -> None:
 @click.option("--hint", "-h", default="", help="Context hint")
 @click.option("--retries", "-r", default=3, help="Max retries")
 @click.option("--react/--no-react", default=True, help="Use ReAct agent")
+@click.option("--mock/--no-mock", default=False, help="Use mock LLM (no API key needed)")
 @click.option("--db", default="sqlite:///./coevolve.db", help="Database URL")
 def run(
     vuln: str,
@@ -32,6 +33,7 @@ def run(
     hint: str,
     retries: int,
     react: bool,
+    mock: bool,
     db: str,
 ) -> None:
     """Run one training episode and output JSON."""
@@ -60,9 +62,12 @@ def run(
         prompt_version = latest_prompt.version if latest_prompt else 0
 
         # Build LLM
-        settings = get_settings()
-        provider = "anthropic" if settings.anthropic_api_key else "openai"
-        llm = build_client(provider, settings.llm_model)
+        if mock:
+            llm = build_client("mock", "mock")
+        else:
+            settings = get_settings()
+            provider = "anthropic" if settings.anthropic_api_key else "openai"
+            llm = build_client(provider, settings.llm_model)
 
         # Run episode
         loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=react)

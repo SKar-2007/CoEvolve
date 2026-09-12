@@ -199,9 +199,72 @@ class ModelConfig(BaseModel):
     max_tokens: int = 4096
 
 
+class MockClient(LLMClient):
+    """Mock LLM client for demo/testing without API keys."""
+
+    def __init__(self, model: str = "mock"):
+        super().__init__(model)
+
+    def generate(
+        self,
+        system: str,
+        user: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
+        # Detect role from system prompt
+        if "red-team" in system.lower() or "attacker" in system.lower():
+            text = self._mock_attacker_response(user)
+        elif "failure trace" in system.lower() or "distill" in system.lower():
+            text = self._mock_distiller_response(user)
+        else:
+            text = self._mock_developer_response(user)
+
+        return LLMResponse(
+            text=text,
+            provider="mock",
+            model=self.model,
+            prompt_tokens=len(system.split()) + len(user.split()),
+            completion_tokens=len(text.split()),
+        )
+
+    def _mock_attacker_response(self, user: str) -> str:
+        import json
+        task = {
+            "task_description": "Create a SQL injection vulnerability in a login endpoint",
+            "vulnerability_class": "SQLi",
+            "difficulty_tier": 2,
+            "target_file": "app.py",
+            "vulnerable_code": 'query = f"SELECT * FROM users WHERE username=\'{username}\' AND password=\'{password}\'"',
+            "expected_impact": "Bypass authentication or extract data",
+        }
+        return json.dumps(task)
+
+    def _mock_developer_response(self, user: str) -> str:
+        import json
+        patch = {
+            "file_path": "app.py",
+            "diff": '- query = f"SELECT * FROM users WHERE username=\'{username}\' AND password=\'{password}\'"\n+ query = "SELECT * FROM users WHERE username = ? AND password = ?"\n+ params = (username, password)',
+            "explanation": "Use parameterized queries to prevent SQL injection",
+        }
+        return json.dumps(patch)
+
+    def _mock_distiller_response(self, user: str) -> str:
+        import json
+        rule = {
+            "rule_text": "Always use parameterized queries for SQL operations. Never interpolate user input into SQL strings.",
+            "vulnerability_class": "SQLi",
+            "source_pattern": "SELECT * FROM users WHERE username='{input}'",
+            "recommended_fix": "Use db.execute('SELECT * FROM users WHERE username = ?', (input,))",
+        }
+        return json.dumps(rule)
+
+
 def build_client(provider: str, model: str, api_key: str | None = None) -> LLMClient:
     """Factory returning the client for a provider name."""
     provider = (provider or "anthropic").lower()
+    if provider == "mock":
+        return MockClient(model)
     if provider == "anthropic":
         return AnthropicClient(model, api_key)
     if provider == "openai":
