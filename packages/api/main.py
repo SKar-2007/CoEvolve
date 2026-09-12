@@ -219,8 +219,8 @@ def get_prompt_diff(v1: int, v2: int, db: Session = Depends(get_db)) -> PromptDi
     store = PromptStore()
     try:
         diff = store.diff(v1, v2)
-    except KeyError:
-        raise HTTPException(404, f"Version {v1} or {v2} not found")
+    except KeyError as exc:
+        raise HTTPException(404, f"Version {v1} or {v2} not found") from exc
     return PromptDiffResponse(
         from_version=diff["from"],
         to_version=diff["to"],
@@ -309,9 +309,8 @@ def stop_episode(
 def update_config(
     body: ConfigUpdateRequest,
     _auth: APIKey | None = Depends(require_api_key_if_enabled),
-) -> dict[str, str]:
-    settings = get_settings()
-    updated = []
+) -> dict[str, object]:
+    updated: list[str] = []
     if body.llm_model is not None:
         updated.append(f"llm_model={body.llm_model}")
     if body.k_factor is not None:

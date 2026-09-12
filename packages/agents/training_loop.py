@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 class JudgeProtocol(Protocol):
     """Structural type for the hybrid judge (avoids Any)."""
 
-    def evaluate(self, patch_text: str, vulnerability_class: str, **kwargs: Any) -> Any: ...
+    def evaluate(
+        self, patch_text: str, vulnerability_class: str, *args: Any, **kwargs: Any
+    ) -> Any: ...
 
 
 class EloCalculatorProtocol(Protocol):
@@ -210,6 +212,7 @@ class TrainingLoop:
     def _make_llm_callback(self) -> Any:
         """Create a callback that notifies the reporter of LLM calls."""
         reporter = self.reporter
+        assert reporter is not None, "reporter must be set when creating LLM callback"
 
         def _callback(system: str, user: str, response: Any) -> None:
             # Infer agent from the system prompt content

@@ -87,12 +87,12 @@ def get_db():
 
 def reset_engine():
     """Reset the global engine and session factory (for testing)."""
+    import contextlib
+
     global _engine, _session_factory
     with _engine_lock:
         if _engine is not None:
-            try:
+            with contextlib.suppress(Exception):
                 _engine.dispose()
-            except Exception:
-                pass
         _engine = None
         _session_factory = None

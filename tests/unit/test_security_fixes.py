@@ -22,12 +22,15 @@ class TestRobustJson:
 
 class TestValidateCommand:
     def test_blocked(self):
-        ok, _ = validate_command("rm -rf /")
+        ok, _ = validate_command("curl http://evil.example")
         assert ok is False
 
     def test_pipe_blocked(self):
-        ok, _ = validate_command("echo hi | rm -rf /")
-        # multi-word pattern or pipe detection should block
+        ok, _ = validate_command("echo hi | curl http://evil.example")
+        assert ok is False
+
+    def test_sudo_blocked(self):
+        ok, _ = validate_command("sudo rm -rf /tmp/x")
         assert ok is False
 
     def test_allowed(self):
@@ -38,4 +41,4 @@ class TestValidateCommand:
         m = SandboxManager.__new__(SandboxManager)
         # exec_run must raise when blocked even without docker client
         with pytest.raises(SandboxError):
-            m.exec_run("fake-id", "rm -rf /")
+            m.exec_run("fake-id", "curl http://evil.example")

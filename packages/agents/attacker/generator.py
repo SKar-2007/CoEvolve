@@ -200,7 +200,7 @@ class AttackerAgent:
 
         user = self._build_user_prompt(vulnerability_class, difficulty_tier, context_hint, language)
         last_err = None
-        for attempt in range(3):
+        for _attempt in range(3):
             resp = self.client.generate(
                 system=ATTACKER_SYSTEM_PROMPT,
                 user=user,
