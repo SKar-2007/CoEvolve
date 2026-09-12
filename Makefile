@@ -1,6 +1,6 @@
 .PHONY: install dev test lint typecheck docker-up docker-down docker-prod setup run-api \
        demo benchmark stress clean build-sandbox dast dast-py dast-js dast-java \
-       rules-export rules-import dashboard
+       rules-export rules-import dashboard ci
 
 # ---------------------------------------------------------------------------
 # Development
@@ -20,6 +20,20 @@ lint:
 
 typecheck:
 	mypy packages --ignore-missing-imports
+
+ci:
+	@echo "=== CI: Lint ==="
+	ruff check packages/ tests/
+	ruff format --check packages/ tests/
+	@echo "=== CI: Typecheck ==="
+	mypy packages --ignore-missing-imports
+	@echo "=== CI: Unit Tests ==="
+	python -m pytest tests/unit/ -v --tb=short -q
+	@echo "=== CI: Integration Tests ==="
+	python -m pytest tests/integration/ -v --tb=short -q -m "not integration"
+	@echo "=== CI: DAST (Python) ==="
+	python -m packages.judge.dast.runner --lang python
+	@echo "=== CI: All passed ==="
 
 # ---------------------------------------------------------------------------
 # Docker
