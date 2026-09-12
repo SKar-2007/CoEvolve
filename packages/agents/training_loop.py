@@ -339,10 +339,11 @@ class TrainingLoop:
             trace.judge_outcome = verdict.j
             trace.judge_verdict = verdict.as_dict()
 
-            # Clean up workspace after evaluation (TEMPORARILY DISABLED FOR DEBUGGING)
-            # import shutil
-            # if workspace_path.exists():
-            #     shutil.rmtree(workspace_path, ignore_errors=True)
+            # Clean up workspace after evaluation
+            import shutil
+
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path, ignore_errors=True)
 
             outcome_text = "VULNERABLE" if verdict.j == 1 else "SECURE"
             self._notify("on_step_end", "judge", f"outcome: {outcome_text}", time.time() - s)
