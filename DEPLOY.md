@@ -43,6 +43,10 @@ Copy `.env.example` to `.env` and fill in:
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
 | `JWT_SECRET` | Yes | JWT signing secret (use `openssl rand -hex 32`) |
 | `GRAFANA_PASSWORD` | No | Grafana admin password |
+| `REQUIRE_AUTH` | Yes | Set `true` — requires `X-API-Key` on mutating endpoints |
+| `API_KEY_STORE` | Yes | Set `db` — persists keys in Postgres, shared across workers |
+| `ADMIN_API_KEY` | Yes | Bootstrap admin credential (only its hash is stored) |
+| `CORS_ORIGINS` | Yes | Comma-separated allowed origins, e.g. `https://app.example.com` |
 
 *At least one LLM provider key is required.
 
@@ -54,7 +58,35 @@ openssl rand -hex 32
 
 # Generate a secure PostgreSQL password
 openssl rand -base64 24
+
+# Generate a bootstrap admin API key (store it in a password manager —
+# the raw value is shown only at creation and never logged)
+python -c "import secrets; print('cov_' + secrets.token_urlsafe(32))"
 ```
+
+### API Keys
+
+With `API_KEY_STORE=db`, keys survive restarts and are shared across
+uvicorn workers. `ADMIN_API_KEY` from `.env` is registered automatically on
+first startup (idempotent). Create further keys from a shell with the
+database reachable, e.g.:
+
+```bash
+DATABASE_URL=postgresql://... python -c "
+from packages.api.auth import DBAPIKeyStore
+print(DBAPIKeyStore().create_key('ops-admin', tier='admin').key)
+"
+```
+
+### Docker Socket (read before deploying)
+
+The `api` service mounts `/var/run/docker.sock` because the sandbox feature
+spawns per-episode containers. A compromised API container means Docker
+daemon control on that host. Mitigations already applied: required-secrets
+validation (fail-fast), `no-new-privileges`, resource limits, non-root app
+user. If this risk is unacceptable for your environment, run the sandbox
+against a dedicated Docker host over TLS or a rootless daemon instead of the
+local socket.
 
 ## Architecture
 

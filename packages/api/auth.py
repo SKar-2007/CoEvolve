@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import os
 import secrets
 import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader, APIKeyQuery
@@ -90,19 +94,178 @@ class APIKeyStore:
             return self._keys.get(key_hash)
 
 
+class DBAPIKeyStore:
+    """Database-backed API key store (survives restarts, shared across workers).
+
+    Only key hashes are persisted (``api_keys`` table, created by
+    ``Base.metadata.create_all`` on startup). The raw key is returned exactly
+    once by :meth:`create_key` and must be stored securely by the operator.
+    ``validate`` returns an ``APIKey`` carrying the *presented* credential
+    transiently so ``key_hash``-based rate-limit bucketing keeps working;
+    it is never written anywhere.
+    """
+
+    def __init__(self, session_factory: Any = None) -> None:
+        self._session_factory = session_factory
+
+    def _factory(self) -> Any:
+        if self._session_factory is not None:
+            return self._session_factory
+        from .database import get_session_factory
+
+        return get_session_factory()
+
+    def create_key(self, name: str, tier: str = "standard") -> APIKey:
+        from .models import ApiKeyRecord
+
+        key = f"cov_{secrets.token_urlsafe(32)}"
+        key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+        db = self._factory()()
+        try:
+            db.add(
+                ApiKeyRecord(
+                    key_hash=key_hash,
+                    name=name,
+                    tier=tier,
+                    disabled=False,
+                    created_at=time.time(),
+                    last_used=0.0,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+        logger.info("Created API key %r (tier=%s)", name, tier)
+        return APIKey(key=key, name=name, tier=tier)
+
+    def validate(self, key: str) -> APIKey | None:
+        from .models import ApiKeyRecord
+
+        key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+        db = self._factory()()
+        try:
+            record = db.get(ApiKeyRecord, key_hash)
+            if record is None or record.disabled:
+                return None
+            record.last_used = time.time()
+            db.commit()
+            return APIKey(
+                key=key,
+                name=record.name,
+                tier=record.tier,
+                created_at=record.created_at,
+                last_used=record.last_used,
+                disabled=False,
+            )
+        finally:
+            db.close()
+
+    def disable(self, key: str) -> bool:
+        from .models import ApiKeyRecord
+
+        key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+        db = self._factory()()
+        try:
+            record = db.get(ApiKeyRecord, key_hash)
+            if record is None:
+                return False
+            record.disabled = True
+            db.commit()
+            return True
+        finally:
+            db.close()
+
+    def list_keys(self) -> list[APIKey]:
+        """List keys with raw values redacted (hashes are unrecoverable by design)."""
+        from .models import ApiKeyRecord
+
+        db = self._factory()()
+        try:
+            records = db.query(ApiKeyRecord).all()
+            return [
+                APIKey(
+                    key="",
+                    name=r.name,
+                    tier=r.tier,
+                    created_at=r.created_at,
+                    last_used=r.last_used,
+                    disabled=r.disabled,
+                )
+                for r in records
+            ]
+        finally:
+            db.close()
+
+    def ensure_bootstrap_key(self, raw_key: str, name: str = "admin-env") -> None:
+        """Register the ``ADMIN_API_KEY`` env value if not already present."""
+        from .models import ApiKeyRecord
+
+        if not raw_key:
+            return
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()[:16]
+        db = self._factory()()
+        try:
+            if db.get(ApiKeyRecord, key_hash) is None:
+                db.add(
+                    ApiKeyRecord(
+                        key_hash=key_hash,
+                        name=name,
+                        tier="admin",
+                        disabled=False,
+                        created_at=time.time(),
+                        last_used=0.0,
+                    )
+                )
+                db.commit()
+                logger.info("Registered bootstrap admin API key from environment")
+        finally:
+            db.close()
+
+
+def _store_backend() -> str:
+    try:
+        from .config import get_settings
+
+        return (get_settings().api_key_store or "memory").lower()
+    except Exception:
+        return os.getenv("API_KEY_STORE", "memory").lower()
+
+
+def _bootstrap_admin_key(store: APIKeyStore | DBAPIKeyStore) -> None:
+    """Register ADMIN_API_KEY when set (works with both backends)."""
+    try:
+        from .config import get_settings
+
+        raw = get_settings().admin_api_key
+    except Exception:
+        raw = os.getenv("ADMIN_API_KEY", "")
+    if not raw:
+        return
+    if isinstance(store, DBAPIKeyStore):
+        store.ensure_bootstrap_key(raw)
+    elif store.validate(raw) is None:
+        key_hash = hashlib.sha256(raw.encode()).hexdigest()[:16]
+        with store._lock:
+            store._keys[key_hash] = APIKey(key=raw, name="admin-env", tier="admin")
+
+
 # Global key store
-_key_store: APIKeyStore | None = None
+_key_store: APIKeyStore | DBAPIKeyStore | None = None
 _key_store_lock = threading.Lock()
 
 
-def get_key_store() -> APIKeyStore:
+def get_key_store() -> APIKeyStore | DBAPIKeyStore:
     global _key_store
     if _key_store is None:
         with _key_store_lock:
             if _key_store is None:
-                _key_store = APIKeyStore()
-                # Create a default admin key for development
-                _key_store.create_key("dev-admin", tier="admin")
+                if _store_backend() == "db":
+                    _key_store = DBAPIKeyStore()
+                else:
+                    _key_store = APIKeyStore()
+                    # Create a default admin key for development
+                    _key_store.create_key("dev-admin", tier="admin")
+                _bootstrap_admin_key(_key_store)
     return _key_store
 
 

@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     # REQUIRE_AUTH=true in production.
     require_auth: bool = False
 
+    # API key storage backend: "memory" (dev default, lost on restart,
+    # per-worker) or "db" (persisted in api_keys table, shared across
+    # workers). Production must use "db".
+    api_key_store: str = "memory"
+
+    # Bootstrap admin key (raw value, never logged or stored — only its
+    # SHA-256 hash is persisted). Set in production when REQUIRE_AUTH=true
+    # so at least one admin credential exists after deploy.
+    admin_api_key: str = ""
+
     @property
     def resolved_redis_url(self) -> str:
         """Return the effective Redis URL (REDIS_URL preferred, UPSTASH fallback)."""

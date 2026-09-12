@@ -47,6 +47,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = get_engine()
         Base.metadata.create_all(engine)
         _seed_elo()
+        # Warm the key store so ADMIN_API_KEY bootstrap registers at startup
+        # (works for both memory and db backends).
+        from .auth import get_key_store
+
+        get_key_store()
         logger.info("Database connected successfully")
     except Exception as exc:
         # Log and continue so /health stays available; training endpoints

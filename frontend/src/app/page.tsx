@@ -169,6 +169,26 @@ export default function Dashboard() {
   // ELO timeline (reverse to chronological)
   const eloTimeline = [...episodes].reverse();
 
+  // Convergence analysis - rolling secure rate
+  const windowSize = 10;
+  const rollingSecureRate: number[] = [];
+  for (let i = 0; i < eloTimeline.length; i++) {
+    const start = Math.max(0, i - windowSize + 1);
+    const window = eloTimeline.slice(start, i + 1);
+    const secure = window.filter((e) => e.outcome === 0).length;
+    rollingSecureRate.push(secure / window.length);
+  }
+
+  // Per-class performance
+  const perClassPerf: Record<string, { secure: number; total: number; rates: number[] }> = {};
+  eloTimeline.forEach((ep, i) => {
+    const cls = ep.vulnerability_class || "Unknown";
+    if (!perClassPerf[cls]) perClassPerf[cls] = { secure: 0, total: 0, rates: [] };
+    perClassPerf[cls].total++;
+    if (ep.outcome === 0) perClassPerf[cls].secure++;
+    perClassPerf[cls].rates.push(perClassPerf[cls].secure / perClassPerf[cls].total);
+  });
+
   return (
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>
       <header style={{ marginBottom: 40, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -351,6 +371,134 @@ export default function Dashboard() {
               <span style={{ fontSize: 13 }}>Vulnerable ({vulnCount})</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Convergence Analysis */}
+      {rollingSecureRate.length > 2 && (
+        <section
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: 24,
+            marginBottom: 32,
+          }}
+        >
+          <h2 style={{ fontSize: 14, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
+            Convergence Analysis — Rolling Secure Rate (window={windowSize})
+          </h2>
+          <div style={{ position: "relative", height: 180, marginBottom: 16 }}>
+            {/* 50% line */}
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: "50%",
+                height: 1,
+                background: "var(--border)",
+                opacity: 0.5,
+              }}
+            >
+              <span style={{ position: "absolute", right: 0, top: -8, fontSize: 10, color: "var(--text-dim)" }}>
+                50%
+              </span>
+            </div>
+            {/* Rolling rate line */}
+            <svg
+              viewBox={`0 0 ${rollingSecureRate.length * 10} 100`}
+              style={{ width: "100%", height: "100%", position: "absolute" }}
+              preserveAspectRatio="none"
+            >
+              <polyline
+                points={rollingSecureRate
+                  .map((r, i) => `${i * 10 + 5},${100 - r * 100}`)
+                  .join(" ")}
+                fill="none"
+                stroke="var(--green)"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+          <div style={{ display: "flex", gap: 24, justifyContent: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 16, height: 2, background: "var(--green)" }} />
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                Rolling Secure Rate (last {rollingSecureRate.length > 0 ? (rollingSecureRate[rollingSecureRate.length - 1] * 100).toFixed(0) : "?"}%)
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Per-Class Performance */}
+      <section
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: 24,
+          marginBottom: 32,
+        }}
+      >
+        <h2 style={{ fontSize: 14, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
+          Per-Class Performance
+        </h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          {Object.entries(perClassPerf)
+            .sort((a, b) => b[1].total - a[1].total)
+            .map(([cls, d]) => (
+              <div
+                key={cls}
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  padding: 14,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{cls}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{d.total} eps</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <div
+                      style={{
+                        width: `${d.secure / d.total * 100}%`,
+                        height: 6,
+                        background: "var(--green)",
+                        borderRadius: 3,
+                        minWidth: d.secure > 0 ? 4 : 0,
+                      }}
+                    />
+                    <div
+                      style={{
+                        width: `${(d.total - d.secure) / d.total * 100}%`,
+                        height: 6,
+                        background: "var(--accent)",
+                        borderRadius: 3,
+                        minWidth: d.total - d.secure > 0 ? 4 : 0,
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: d.secure / d.total >= 0.7 ? "var(--green)" : "var(--accent)",
+                    }}
+                  >
+                    {(d.secure / d.total * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-dim)" }}>
+                  {d.secure} secure / {d.total - d.secure} vuln
+                </div>
+              </div>
+            ))}
         </div>
       </section>
 

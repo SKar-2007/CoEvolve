@@ -20,9 +20,19 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS must be set in .env (comma-separated origins)}
       - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
+      # P0: persisted keys shared across workers + bootstrap admin credential.
+      # Generate with: python -c "import secrets; print('cov_' + secrets.token_urlsafe(32))"
+      - API_KEY_STORE=${API_KEY_STORE:-db}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      # SECURITY: docker.sock mount = full Docker daemon control. Required for
-      # sandbox feature. See docker-compose.yml header for trade-off + alternatives.
+      # SECURITY: docker.sock mount = full Docker daemon control over the host.
+      # Required for the sandbox feature (spawning per-episode containers).
+      # Mitigations applied: explicit secrets validation above, no-new-privileges,
+      # resource limits, non-root app user (see docker/api/Dockerfile).
+      # Stronger alternatives: rootless Docker daemon, or a dedicated Docker
+      # host reached over TLS instead of the local socket.
       - /var/run/docker.sock:/var/run/docker.sock
       - prompt_store:/app/.prompt_store
     depends_on:

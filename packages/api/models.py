@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import (
     JSON,
@@ -48,21 +49,21 @@ class EpisodeRecord(Base):
         ),
         default="pending",
     )
-    vulnerability_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    difficulty_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0=secure, 1=vuln
-    task_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    patch_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    exploit_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
-    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    judge_verdict: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    vulnerability_class: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    difficulty_tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    outcome: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0=secure, 1=vuln
+    task_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    exploit_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    container_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    judge_verdict: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
     attacker_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     developer_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     prompt_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PromptRecord(Base):
@@ -73,7 +74,7 @@ class PromptRecord(Base):
     base_prompt: Mapped[str] = mapped_column(Text, default="")
     rules: Mapped[list] = mapped_column(JSON, default=list)
     commit_message: Mapped[str] = mapped_column(Text, default="")
-    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -99,3 +100,19 @@ class EloRecord(Base):
     developer_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     episodes_played: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ApiKeyRecord(Base):
+    """Persisted API key (hash only — raw keys are never stored).
+
+    Created automatically by ``Base.metadata.create_all`` on startup.
+    """
+
+    __tablename__ = "api_keys"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    tier: Mapped[str] = mapped_column(String(32), default="standard")
+    disabled: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[float] = mapped_column(Float, default=0.0)
+    last_used: Mapped[float] = mapped_column(Float, default=0.0)

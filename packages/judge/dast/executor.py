@@ -188,18 +188,29 @@ class ExploitExecutor:
         class_id: str,
         base_url: str,
         endpoint: str = "/",
-        param_name: str = "name",
+        param_name: str | None = "name",
         timeout: int = 10,
         payload_override: str | None = None,
         follow_redirects: bool = True,
     ) -> DASTResult:
-        """Execute a payload against an HTTP endpoint."""
+        """Execute a payload against an HTTP endpoint.
+
+        If param_name is None, sends the payload as a POST body instead of a
+        query parameter (for /load, /parse, /merge endpoints).
+        """
         payload = self.library.get(class_id)
         actual_payload = payload_override or payload.payload
-        url = f"{base_url}{endpoint}?{param_name}={urllib.parse.quote(actual_payload)}"
+        if param_name:
+            url = f"{base_url}{endpoint}?{param_name}={urllib.parse.quote(actual_payload)}"
+            data = None
+        else:
+            url = f"{base_url}{endpoint}"
+            data = actual_payload.encode("utf-8")
         start = _now_ms()
         try:
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, data=data)
+            if data:
+                req.add_header("Content-Type", "application/octet-stream")
             if not follow_redirects:
                 # Manually handle to avoid following redirects
                 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
