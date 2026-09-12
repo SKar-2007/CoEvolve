@@ -377,7 +377,7 @@ def run_training_episode(
     # Build LLM client
     settings = get_settings()
     provider = "anthropic" if settings.anthropic_api_key else "openai"
-    llm = build_client(provider)
+    llm = build_client(provider, settings.llm_model)
 
     # Build and run training loop
     loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)

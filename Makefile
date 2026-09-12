@@ -19,14 +19,14 @@ lint:
 	ruff check packages tests
 
 typecheck:
-	mypy packages --ignore-missing-imports
+	mypy packages --ignore-missing-imports --explicit-package-bases
 
 ci:
 	@echo "=== CI: Lint ==="
 	ruff check packages/ tests/
 	ruff format --check packages/ tests/
 	@echo "=== CI: Typecheck ==="
-	mypy packages --ignore-missing-imports
+	mypy packages --ignore-missing-imports --explicit-package-bases
 	@echo "=== CI: Unit Tests ==="
 	python -m pytest tests/unit/ -v --tb=short -q
 	@echo "=== CI: Integration Tests ==="

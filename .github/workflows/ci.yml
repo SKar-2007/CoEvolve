@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install mypy pydantic pydantic-settings sqlalchemy
-      - run: mypy packages/ --ignore-missing-imports
+      - run: mypy packages/ --ignore-missing-imports --explicit-package-bases
 
   unit-tests:
     name: Unit Tests

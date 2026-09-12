@@ -253,7 +253,7 @@ LAUNCHERS = {
     "java": _start_java_app,
 }
 
-APP_REGISTRIES = {
+APP_REGISTRIES: dict[str, dict] = {
     "python": PYTHON_APPS,
     "javascript": JS_APPS,
     "java": JAVA_APPS,
@@ -303,10 +303,11 @@ def run_all(
                 continue
 
             try:
-                url = f"http://127.0.0.1:{port}/internal/metadata"
+                # Check root or metadata endpoint depending on language
+                check_url = f"http://127.0.0.1:{port}/"
                 # Java Spring Boot takes ~45s to start; Python/JS take ~2s
                 wait_timeout = 60 if language == "java" else 15
-                if not _wait_for_server(url, timeout=wait_timeout):
+                if not _wait_for_server(check_url, timeout=wait_timeout):
                     run_result.results.append(
                         ClassResult(
                             vuln_class=vuln_class, lang=language, error="Server did not start"

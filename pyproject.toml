@@ -10,7 +10,8 @@ ignore = ["E501", "B008", "E402", "UP042"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-exclude = ["tests"]
+exclude = ["tests", "packages/judge/dast/targets/vulnerable_app_java"]
+explicit_package_bases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
