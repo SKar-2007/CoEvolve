@@ -16,7 +16,14 @@ class Base(DeclarativeBase):
 
 @lru_cache
 def get_engine():
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    url = get_settings().database_url
+    # Supabase requires SSL
+    if "supabase" in url or "sslmode" not in url:
+        if "?" in url:
+            url += "&sslmode=require"
+        else:
+            url += "?sslmode=require"
+    return create_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=3)
 
 
 @lru_cache

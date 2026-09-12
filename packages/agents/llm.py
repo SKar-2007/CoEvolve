@@ -340,6 +340,30 @@ class MockClient(LLMClient):
         return json.dumps(rule)
 
 
+class ReportingLLMClient(LLMClient):
+    """Wrapper that notifies a callback on each LLM call."""
+
+    def __init__(self, client: LLMClient, callback: Any = None) -> None:
+        super().__init__(client.model)
+        self._client = client
+        self._callback = callback
+
+    def generate(
+        self,
+        system: str,
+        user: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
+        response = self._client.generate(system, user, temperature, max_tokens)
+        if self._callback is not None:
+            self._callback(system, user, response)
+        return response
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
 def build_client(provider: str, model: str, api_key: str | None = None) -> LLMClient:
     """Factory returning the client for a provider name."""
     provider = (provider or "anthropic").lower()

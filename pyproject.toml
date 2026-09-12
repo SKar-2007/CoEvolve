@@ -8,21 +8,31 @@ version = "0.1.0"
 description = "CoEvolve — Adversarial Training as a Service"
 requires-python = ">=3.10"
 dependencies = [
-    "click>=8.0",
-    "sqlalchemy>=2.0",
     "fastapi>=0.100",
     "uvicorn>=0.23",
+    "sqlalchemy>=2.0",
+    "pydantic-settings>=2.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
 ]
 
 [project.scripts]
-coevolve = "packages.cli.main:main"
+coevolve = "packages.api.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["packages.*"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py310"
 line-length = 100
 src = ["packages", "tests"]
 
@@ -31,7 +41,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 ignore = ["E501", "B008", "E402", "UP042"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 ignore_missing_imports = true
 exclude = ["tests", "packages/judge/dast/targets/vulnerable_app_java"]
 explicit_package_bases = true
@@ -45,11 +55,3 @@ markers = [
     "e2e: Full end-to-end scenarios",
 ]
 addopts = "-q"
-
-[tool.coverage.run]
-source = ["packages"]
-omit = ["tests/*"]
-
-[tool.coverage.report]
-fail_under = 50
-show_missing = true

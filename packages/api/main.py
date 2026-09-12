@@ -1,40 +1,30 @@
-"""Main FastAPI application with full CRUD endpoints."""
+"""CoEvolve API — simplified for Render free tier deployment."""
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .auth import (
-    APIKey,
-    get_key_store,
-    require_api_key,
-)
 from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
     EloHistoryResponse,
-    EpisodeCreate,
     EpisodeRead,
     MetricsSnapshot,
-    PromptDiffResponse,
-    PromptVersionRead,
     RuleRead,
-    TrainingJobListResponse,
-    TrainingJobRead,
     TrainingRunRequest,
     TrainingRunResponse,
 )
-from .task_queue import TaskQueue, TrainingJob
-
-settings = get_settings()
 
 
 @asynccontextmanager
@@ -45,9 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="CoEvolve Sandbox API",
+    title="CoEvolve API",
     version="0.1.0",
-    description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
+    description="Adversarial Training as a Service",
     lifespan=lifespan,
 )
 
@@ -58,77 +48,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    """Apply rate limiting to all requests."""
-    # Skip rate limiting for docs and static files
-    if request.url.path in ("/docs", "/redoc", "/openapi.json") or request.url.path.startswith(
-        "/static"
-    ):
-        return await call_next(request)
-
-    # Check rate limit
-    from .auth import get_rate_limiter
-
-    key_store = get_key_store()
-    limiter = get_rate_limiter()
-
-    # Extract API key if present
-    api_key_header = request.headers.get("X-API-Key")
-    api_key = key_store.validate(api_key_header) if api_key_header else None
-
-    if api_key:
-        identifier = f"key:{api_key.key_hash}"
-        tier = api_key.tier
-    else:
-        client_ip = request.client.host if request.client else "unknown"
-        identifier = f"ip:{client_ip}"
-        tier = "public"
-
-    allowed, info = limiter.is_allowed(identifier, tier)
-
-    if not allowed:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Rate limit exceeded"},
-            headers={
-                "X-RateLimit-Limit": str(info["limit"]),
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(info["reset"]),
-                "Retry-After": str(info["retry_after"]),
-            },
-        )
-
-    response = await call_next(request)
-    response.headers["X-RateLimit-Limit"] = str(info["limit"])
-    response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
-    response.headers["X-RateLimit-Reset"] = str(info["reset"])
-    return response
-
-
-from pathlib import Path
-
-from fastapi.responses import HTMLResponse
-
-_dashboard_path = Path(__file__).parent / "static" / "dashboard.html"
-
-
-@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
-def dashboard():
-    return _dashboard_path.read_text()
-
-
-# Global task queue instance
-_task_queue: TaskQueue | None = None
-
-
-def get_task_queue() -> TaskQueue:
-    global _task_queue
-    if _task_queue is None:
-        _task_queue = TaskQueue(redis_url=settings.redis_url)
-    return _task_queue
 
 
 def _seed_elo() -> None:
@@ -169,18 +88,6 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 # Episodes
 # ---------------------------------------------------------------------------
-@app.post("/episodes", response_model=EpisodeRead, status_code=201)
-def create_episode(body: EpisodeCreate, db: Session = Depends(get_db)) -> EpisodeRecord:
-    ep = EpisodeRecord(
-        status="pending",
-        vulnerability_class=body.vulnerability_classes[0] if body.vulnerability_classes else "SQLi",
-    )
-    db.add(ep)
-    db.commit()
-    db.refresh(ep)
-    return ep
-
-
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
     status: str | None = Query(None),
@@ -214,35 +121,16 @@ def elo(db: Session = Depends(get_db)) -> dict[str, float]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
-@app.get("/prompts/current", response_model=PromptVersionRead)
-def current_prompt(db: Session = Depends(get_db)) -> PromptVersionRead:
-    record = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-    if not record:
-        raise HTTPException(404, "No prompts found")
-    return PromptVersionRead(
-        version=record.version,
-        rules_count=len(record.rules or []),
-        created_at=record.created_at,
+@app.get("/elo/history", response_model=EloHistoryResponse)
+def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
+    record = db.get(EloRecord, "global")
+    return EloHistoryResponse(
+        history=[],
+        current={
+            "attacker": record.attacker_rating if record else 1500.0,
+            "developer": record.developer_rating if record else 1500.0,
+        },
     )
-
-
-@app.get("/prompts/history", response_model=list[PromptVersionRead])
-def prompt_history(
-    limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-) -> list[PromptVersionRead]:
-    records = db.query(PromptRecord).order_by(PromptRecord.version.desc()).limit(limit).all()
-    return [
-        PromptVersionRead(
-            version=r.version,
-            rules_count=len(r.rules or []),
-            created_at=r.created_at,
-        )
-        for r in records
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -263,115 +151,17 @@ def list_rules(
     return q.order_by(RuleRecord.created_at.desc()).limit(limit).all()
 
 
-@app.get("/rules/{rule_id}", response_model=RuleRead)
-def get_rule(rule_id: str, db: Session = Depends(get_db)) -> RuleRecord:
-    rule = db.get(RuleRecord, rule_id)
-    if not rule:
-        raise HTTPException(404, "Rule not found")
-    return rule
-
-
 # ---------------------------------------------------------------------------
-# Rule Portability (Export/Import)
-# ---------------------------------------------------------------------------
-from ..evolution.portability import RulePackage, export_rules, import_rules
-
-
-@app.post("/rules/export")
-def export_rules_endpoint(
-    name: str = "exported-rules",
-    description: str = "",
-    version: str = "1.0.0",
-    author: str = "",
-    db: Session = Depends(get_db),
-):
-    from ..evolution.store import PromptStore
-
-    store = PromptStore()
-    pkg = export_rules(store, name=name, description=description, version=version, author=author)
-    return {
-        "package_id": pkg.package_id,
-        "name": pkg.name,
-        "version": pkg.version,
-        "rules_count": len(pkg.rules),
-        "rules": pkg.as_dict()["rules"],
-    }
-
-
-@app.post("/rules/import")
-def import_rules_endpoint(
-    package: RulePackage,
-    merge: bool = True,
-    db: Session = Depends(get_db),
-):
-    from ..evolution.store import PromptStore
-
-    store = PromptStore()
-    count = import_rules(store, package, merge=merge)
-    return {"imported": count, "total": len(store.rules())}
-
-
-# ---------------------------------------------------------------------------
-# Prompt Diffs
-# ---------------------------------------------------------------------------
-@app.get("/prompts/diff/{v1}/{v2}", response_model=PromptDiffResponse)
-def prompt_diff(v1: int, v2: int, db: Session = Depends(get_db)) -> PromptDiffResponse:
-    from ..evolution.store import PromptStore
-
-    store = PromptStore()
-    diff = store.diff(v1, v2)
-    return PromptDiffResponse(
-        version_a=v1,
-        version_b=v2,
-        added_rules=diff.get("added", []),
-        removed_rules=diff.get("removed", []),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Elo History
-# ---------------------------------------------------------------------------
-@app.get("/elo/history", response_model=EloHistoryResponse)
-def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
-    record = db.get(EloRecord, "global")
-    return EloHistoryResponse(
-        history=[],  # TODO: store history in DB
-        current={
-            "attacker": record.attacker_rating if record else 1500.0,
-            "developer": record.developer_rating if record else 1500.0,
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Episode Stop
-# ---------------------------------------------------------------------------
-@app.post("/episodes/{episode_id}/stop", response_model=EpisodeRead)
-def stop_episode(episode_id: str, db: Session = Depends(get_db)) -> EpisodeRecord:
-    ep = db.get(EpisodeRecord, episode_id)
-    if not ep:
-        raise HTTPException(404, "Episode not found")
-    if ep.status in ("completed", "failed"):
-        raise HTTPException(400, "Episode already finished")
-    ep.status = "failed"
-    ep.error = "Stopped by user"
-    db.commit()
-    db.refresh(ep)
-    return ep
-
-
-# ---------------------------------------------------------------------------
-# Training Loop
+# Training — Synchronous Run
 # ---------------------------------------------------------------------------
 @app.post("/training/run", response_model=TrainingRunResponse)
 def run_training_episode(
     body: TrainingRunRequest, db: Session = Depends(get_db)
 ) -> TrainingRunResponse:
-    """Execute one co-evolutionary training episode."""
+    """Execute one co-evolutionary training episode (blocks until done)."""
     from ..agents.llm import build_client
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
-    # Get current Elo
     elo_record = db.get(EloRecord, "global")
     current_ratings = (
         (elo_record.attacker_rating, elo_record.developer_rating)
@@ -379,16 +169,26 @@ def run_training_episode(
         else (1500.0, 1500.0)
     )
 
-    # Get current prompt version
     latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
     prompt_version = latest_prompt.version if latest_prompt else 0
 
-    # Build LLM client
     settings = get_settings()
-    provider = "anthropic" if settings.anthropic_api_key else "openai"
-    llm = build_client(provider, settings.llm_model)
+    # Pick best available provider
+    if settings.groq_api_key:
+        provider, key = "groq", settings.groq_api_key
+    elif settings.anthropic_api_key:
+        provider, key = "anthropic", settings.anthropic_api_key
+    elif settings.openai_api_key:
+        provider, key = "openai", settings.openai_api_key
+    elif settings.huggingface_api_key:
+        provider, key = "huggingface", settings.huggingface_api_key
+    elif settings.openrouter_api_key:
+        provider, key = "openrouter", settings.openrouter_api_key
+    else:
+        provider, key = "mock", None
 
-    # Build and run training loop
+    llm = build_client(provider, settings.llm_model, api_key=key)
+
     loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)
     config = EpisodeConfig(
         vulnerability_class=body.vulnerability_class,
@@ -398,7 +198,6 @@ def run_training_episode(
     )
     trace = loop.run_episode(config, current_ratings=current_ratings)
 
-    # Persist episode to DB
     ep = EpisodeRecord(
         id=trace.episode_id,
         status="completed" if not trace.error else "failed",
@@ -415,35 +214,29 @@ def run_training_episode(
     )
     db.add(ep)
 
-    # Update global Elo
     if elo_record:
         elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
         elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
         elo_record.episodes_played += 1
     else:
-        db.add(
-            EloRecord(
-                id="global",
-                attacker_rating=trace.elo_after.get("attacker", 1500.0),
-                developer_rating=trace.elo_after.get("developer", 1500.0),
-                episodes_played=1,
-            )
-        )
+        db.add(EloRecord(
+            id="global",
+            attacker_rating=trace.elo_after.get("attacker", 1500.0),
+            developer_rating=trace.elo_after.get("developer", 1500.0),
+            episodes_played=1,
+        ))
 
-    # Record distilled rule if any
     if trace.distilled_rule and trace.regression_passed:
         rule = trace.distilled_rule
-        db.add(
-            RuleRecord(
-                rule_text=rule.rule_text,
-                vulnerability_class=rule.vulnerability_class,
-                source_pattern=rule.source_pattern,
-                recommended_fix=rule.recommended_fix,
-                source_trace_id=rule.source_trace_id,
-                prompt_version=trace.prompt_version,
-                approved=True,
-            )
-        )
+        db.add(RuleRecord(
+            rule_text=rule.rule_text,
+            vulnerability_class=rule.vulnerability_class,
+            source_pattern=rule.source_pattern,
+            recommended_fix=rule.recommended_fix,
+            source_trace_id=rule.source_trace_id,
+            prompt_version=trace.prompt_version,
+            approved=True,
+        ))
 
     db.commit()
 
@@ -464,7 +257,7 @@ def run_training_episode(
 
 
 # ---------------------------------------------------------------------------
-# SSE: Real-time Training Stream
+# Training — SSE Stream (real-time progress)
 # ---------------------------------------------------------------------------
 @app.get("/training/stream")
 async def training_stream(
@@ -472,21 +265,18 @@ async def training_stream(
     language: str = "python",
 ):
     """Stream training progress via Server-Sent Events."""
-    import asyncio
     import json
-    import time
-    from fastapi.responses import StreamingResponse
+
     from ..agents.llm import build_client
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
     async def event_generator():
-        # Get DB session
         from .database import get_session_factory
+
         factory = get_session_factory()
         db = factory()
 
         try:
-            # Get current Elo
             elo_record = db.get(EloRecord, "global")
             current_ratings = (
                 (elo_record.attacker_rating, elo_record.developer_rating)
@@ -494,16 +284,20 @@ async def training_stream(
                 else (1500.0, 1500.0)
             )
 
-            # Get current prompt version
             latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
             prompt_version = latest_prompt.version if latest_prompt else 0
 
-            # Build LLM client
             settings = get_settings()
-            provider = "anthropic" if settings.anthropic_api_key else "openai"
-            llm = build_client(provider, settings.llm_model)
+            if settings.groq_api_key:
+                provider, key = "groq", settings.groq_api_key
+            elif settings.anthropic_api_key:
+                provider, key = "anthropic", settings.anthropic_api_key
+            elif settings.openai_api_key:
+                provider, key = "openai", settings.openai_api_key
+            else:
+                provider, key = "mock", None
 
-            # Episode config
+            llm = build_client(provider, settings.llm_model, api_key=key)
             config = EpisodeConfig(
                 vulnerability_class=vulnerability_class,
                 language=language,
@@ -511,57 +305,35 @@ async def training_stream(
                 max_retries=3,
             )
 
-            # Send start event
             yield f"data: {json.dumps({'type': 'start', 'vuln': vulnerability_class, 'lang': language, 'elo': list(current_ratings)})}\n\n"
             await asyncio.sleep(0.1)
 
-            # Step 1: Attacker
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'attacker', 'status': 'working', 'message': 'Generating adversarial task...'})}\n\n"
-            await asyncio.sleep(0.5)
+            # Run in thread pool
+            loop_inst = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
 
-            # Run the actual episode in a thread to avoid blocking
-            loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
-
-            # We'll simulate the steps with real execution
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'attacker', 'status': 'done', 'message': f'Task: {vulnerability_class} attack generated'})}\n\n"
-            await asyncio.sleep(0.2)
-
-            # Step 2: Developer
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'developer', 'status': 'working', 'message': 'Reading code and building patch...'})}\n\n"
-            await asyncio.sleep(0.5)
-
-            # Run episode in thread
-            import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(loop.run_episode, config, current_ratings=current_ratings)
-                # Wait for completion
+                future = pool.submit(loop_inst.run_episode, config, current_ratings=current_ratings)
                 trace = await asyncio.get_event_loop().run_in_executor(None, future.result)
 
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'developer', 'status': 'done', 'message': 'Patch built'})}\n\n"
-            await asyncio.sleep(0.2)
-
-            # Step 3: Judge
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'judge', 'status': 'working', 'message': 'Running SAST + DAST verification...'})}\n\n"
-            await asyncio.sleep(0.3)
-
             outcome_text = "SECURE" if trace.judge_outcome == 0 else "VULNERABLE"
-            yield f"data: {json.dumps({'type': 'agent', 'agent': 'judge', 'status': 'done', 'message': f'Outcome: {outcome_text}'})}\n\n"
-            await asyncio.sleep(0.2)
 
-            # Step 4: Distiller (if rule was created)
+            steps = [
+                {"type": "agent", "agent": "attacker", "status": "done", "message": f"Task generated (tier {trace.difficulty_tier}/10)"},
+                {"type": "agent", "agent": "developer", "status": "done", "message": f"Patch built ({len(trace.patch_text)} chars)"},
+                {"type": "agent", "agent": "judge", "status": "done", "message": f"Outcome: {outcome_text}"},
+            ]
             if trace.distilled_rule and trace.regression_passed:
-                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'working', 'message': 'Distilling new security rule...'})}\n\n"
-                await asyncio.sleep(0.3)
-                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'done', 'message': f'Rule: {trace.distilled_rule.rule_text[:80]}...' })}\n\n"
+                steps.append({"type": "agent", "agent": "distiller", "status": "done", "message": f"Rule: {trace.distilled_rule.rule_text[:80]}"})
             else:
-                yield f"data: {json.dumps({'type': 'agent', 'agent': 'distiller', 'status': 'skip', 'message': 'No rule to distill'})}\n\n"
+                steps.append({"type": "agent", "agent": "distiller", "status": "skip", "message": "No rule distilled"})
 
-            await asyncio.sleep(0.2)
+            for step in steps:
+                yield f"data: {json.dumps(step)}\n\n"
+                await asyncio.sleep(0.1)
 
-            # Step 5: Elo update
             yield f"data: {json.dumps({'type': 'elo', 'before': trace.elo_before, 'after': trace.elo_after})}\n\n"
 
-            # Persist to DB
+            # Persist
             ep = EpisodeRecord(
                 id=trace.episode_id,
                 status="completed" if not trace.error else "failed",
@@ -604,7 +376,6 @@ async def training_stream(
 
             db.commit()
 
-            # Send final result
             yield f"data: {json.dumps({'type': 'complete', 'episode_id': trace.episode_id, 'outcome': trace.judge_outcome, 'rule_distilled': trace.distilled_rule is not None and trace.regression_passed, 'duration_s': trace.duration_s})}\n\n"
 
         except Exception as e:
@@ -615,131 +386,5 @@ async def training_stream(
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
-
-
-# ---------------------------------------------------------------------------
-# Async Training Jobs (Redis queue)
-# ---------------------------------------------------------------------------
-@app.post("/training/async", response_model=TrainingJobRead, status_code=202)
-def enqueue_training_job(body: TrainingRunRequest) -> TrainingJobRead:
-    """Enqueue a training episode for background execution."""
-    queue = get_task_queue()
-    job = TrainingJob(
-        vulnerability_class=body.vulnerability_class,
-        language=body.language,
-        context_hint=body.context_hint,
-        max_retries=body.max_retries,
-    )
-    queue.enqueue(job)
-    return TrainingJobRead(
-        job_id=job.job_id,
-        status=job.status.value,
-        vulnerability_class=job.vulnerability_class,
-        created_at=job.created_at,
-    )
-
-
-@app.get("/training/jobs", response_model=TrainingJobListResponse)
-def list_training_jobs(limit: int = Query(50, ge=1, le=200)) -> TrainingJobListResponse:
-    """List recent training jobs."""
-    queue = get_task_queue()
-    jobs = queue.list_jobs(limit=limit)
-    return TrainingJobListResponse(
-        jobs=[
-            TrainingJobRead(
-                job_id=j.job_id,
-                status=j.status.value,
-                vulnerability_class=j.vulnerability_class,
-                created_at=j.created_at,
-                started_at=j.started_at,
-                completed_at=j.completed_at,
-                error=j.error or None,
-            )
-            for j in jobs
-        ],
-        queue_length=queue.queue_length(),
-    )
-
-
-@app.get("/training/jobs/{job_id}", response_model=TrainingJobRead)
-def get_training_job(job_id: str) -> TrainingJobRead:
-    """Get status of a specific training job."""
-    queue = get_task_queue()
-    job = queue.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    return TrainingJobRead(
-        job_id=job.job_id,
-        status=job.status.value,
-        vulnerability_class=job.vulnerability_class,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        result=job.result if job.result else None,
-        error=job.error or None,
-    )
-
-
-# ---------------------------------------------------------------------------
-# API Key Management
-# ---------------------------------------------------------------------------
-@app.post("/auth/keys")
-def create_api_key(
-    name: str = "default",
-    tier: str = "standard",
-    api_key: APIKey | None = Depends(require_api_key),
-):
-    """Create a new API key (admin only)."""
-    if api_key and api_key.tier != "admin":
-        raise HTTPException(403, "Admin access required")
-    store = get_key_store()
-    new_key = store.create_key(name=name, tier=tier)
-    return {
-        "key": new_key.key,
-        "name": new_key.name,
-        "tier": new_key.tier,
-        "created_at": new_key.created_at,
-    }
-
-
-@app.get("/auth/keys")
-def list_api_keys(api_key: APIKey | None = Depends(require_api_key)):
-    """List all API keys (admin only)."""
-    if api_key and api_key.tier != "admin":
-        raise HTTPException(403, "Admin access required")
-    store = get_key_store()
-    keys = store.list_keys()
-    return [
-        {
-            "key_hash": k.key_hash,
-            "name": k.name,
-            "tier": k.tier,
-            "created_at": k.created_at,
-            "last_used": k.last_used,
-            "disabled": k.disabled,
-        }
-        for k in keys
-    ]
-
-
-@app.delete("/auth/keys/{key_hash}")
-def disable_api_key(
-    key_hash: str,
-    api_key: APIKey | None = Depends(require_api_key),
-):
-    """Disable an API key (admin only)."""
-    if api_key and api_key.tier != "admin":
-        raise HTTPException(403, "Admin access required")
-    store = get_key_store()
-    # Find key by hash
-    for k in store.list_keys():
-        if k.key_hash == key_hash:
-            store.disable(k.key)
-            return {"disabled": True, "key_hash": key_hash}
-    raise HTTPException(404, "Key not found")

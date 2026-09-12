@@ -13,21 +13,24 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # Supabase PostgreSQL (from Settings > Database > Connection string)
     database_url: str = "postgresql://postgres:password@localhost:5432/coevolve"
-    redis_url: str = "redis://localhost:6379"
 
-    llm_provider: str = "anthropic"
-    llm_model: str = "claude-sonnet-4-5"
-    llm_small_model: str = "claude-haiku-4-5"
+    # Upstash Redis (from console.upstash.com)
+    upstash_redis_url: str = ""
 
+    # LLM — Groq free tier (console.groq.com)
+    llm_provider: str = "groq"
+    llm_model: str = "llama-3.3-70b-versatile"
+    groq_api_key: str = ""
+
+    # Optional fallback providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openrouter_api_key: str = ""
     gemini_api_key: str = ""
     huggingface_api_key: str = ""
-    groq_api_key: str = ""
 
-    jwt_secret: str = "change-me"
     log_level: str = "INFO"
 
 

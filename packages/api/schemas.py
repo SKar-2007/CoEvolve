@@ -10,16 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class EpisodeStatus(str, Enum):
     PENDING = "pending"
-    CREATING = "creating"
-    EXECUTING = "executing"
-    EVALUATING = "evaluating"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-class EpisodeCreate(BaseModel):
-    vulnerability_classes: list[str] = Field(default=["SQLi"])
-    max_duration_minutes: int = Field(default=30, ge=1, le=120)
 
 
 class EpisodeRead(BaseModel):
@@ -32,28 +24,11 @@ class EpisodeRead(BaseModel):
     outcome: int | None = None
     task_description: str | None = None
     patch_text: str | None = None
-    container_id: str | None = None
     error: str | None = None
     attacker_rating: float = 1500.0
     developer_rating: float = 1500.0
     prompt_version: int = 1
     created_at: datetime
-
-
-class PromptVersionRead(BaseModel):
-    version: int
-    rules_count: int
-    created_at: datetime
-    diff: dict[str, list[str]] | None = None
-
-
-class RuleRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    rule_id: str
-    rule_text: str
-    vulnerability_class: str
-    version: int
 
 
 class MetricsSnapshot(BaseModel):
@@ -64,8 +39,6 @@ class MetricsSnapshot(BaseModel):
 
 
 class TrainingRunRequest(BaseModel):
-    """Request to run a training episode via the training loop."""
-
     vulnerability_class: str = "SQLi"
     language: str = "python"
     context_hint: str = ""
@@ -74,8 +47,6 @@ class TrainingRunRequest(BaseModel):
 
 
 class TrainingRunResponse(BaseModel):
-    """Response from a training episode run."""
-
     episode_id: str
     status: str
     difficulty_tier: int
@@ -90,37 +61,18 @@ class TrainingRunResponse(BaseModel):
     error: str | None = None
 
 
-class PromptDiffResponse(BaseModel):
-    """Diff between two prompt versions."""
+class RuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-    version_a: int
-    version_b: int
-    added_rules: list[str] = Field(default_factory=list)
-    removed_rules: list[str] = Field(default_factory=list)
+    id: str
+    rule_text: str
+    vulnerability_class: str
+    source_pattern: str
+    recommended_fix: str
+    approved: bool
+    created_at: datetime
 
 
 class EloHistoryResponse(BaseModel):
-    """Historical Elo ratings."""
-
     history: list[dict] = Field(default_factory=list)
     current: dict[str, float] = Field(default_factory=dict)
-
-
-class TrainingJobRead(BaseModel):
-    """Training job status."""
-
-    job_id: str
-    status: str
-    vulnerability_class: str = "SQLi"
-    created_at: float = 0.0
-    started_at: float | None = None
-    completed_at: float | None = None
-    result: dict | None = None
-    error: str | None = None
-
-
-class TrainingJobListResponse(BaseModel):
-    """List of training jobs with queue info."""
-
-    jobs: list[TrainingJobRead] = Field(default_factory=list)
-    queue_length: int = 0
