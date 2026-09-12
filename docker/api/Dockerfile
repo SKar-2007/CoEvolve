@@ -2,14 +2,14 @@
 # Stage 1: install dependencies into a virtualenv
 # Stage 2: slim runtime image
 
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---- runtime ----
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 RUN groupadd -r coevolve && useradd -r -g coevolve -d /app coevolve
 
