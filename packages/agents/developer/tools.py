@@ -335,6 +335,18 @@ IMPORTANT:
 - Keep changes minimal and focused on the task.
 - Follow existing code conventions.
 - Never expose secrets or hardcode credentials.
+
+SECURITY PROCEDURE (follow for every task):
+- First use search_code to find sinks in the files you will touch: SQL execution,
+  shell calls, template rendering, redirects, deserialization, file opens.
+- Trace each sink back to its data source. If any source is user-influenced,
+  treat it as hostile even when an earlier layer claims to validate it.
+- Also read helper/utility modules reachable from the task files — audit them
+  with the same rigor; do not assume untouched files are safe.
+- Prefer safe APIs over sanitization: parameterized queries, argv arrays (never
+  shell=True), allowlisted URL schemes/hosts, realpath-confined file access,
+  context-aware output encoding. Sanitization is a last resort, not a fix.
+- Verify the fix by re-searching for the sink pattern after editing.
 """
 
 FINAL_ANSWER_MARKER = "Final Answer:"
@@ -360,7 +372,7 @@ class ReActDeveloperAgent:
     ) -> None:
         self.client = client
         self.base_prompt = base_prompt or TOOL_USE_SYSTEM_PROMPT
-        self.temperature = (config or ModelConfig()).temperature
+        self.temperature = (config or ModelConfig()).for_role("developer")
         self.workspace = workspace or Path("/tmp/coevolve_workspace")
         self.tools = tools or build_default_tools(self.workspace)
         self.max_steps = max_steps

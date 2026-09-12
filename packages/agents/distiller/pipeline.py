@@ -58,7 +58,7 @@ class DistillerAgent:
 
     def __init__(self, client: LLMClient, config: ModelConfig | None = None):
         self.client = client
-        self.temperature = (config or ModelConfig()).temperature
+        self.temperature = (config or ModelConfig()).for_role("distiller")
 
     def distill(self, trace: str, trace_id: str = "") -> DistilledRule:
         resp = self.client.generate(

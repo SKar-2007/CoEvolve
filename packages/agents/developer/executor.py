@@ -67,7 +67,7 @@ class DeveloperAgent:
     ):
         self.client = client
         self.base_prompt = base_prompt or BASE_DEVELOPER_PROMPT
-        self.temperature = (config or ModelConfig()).temperature
+        self.temperature = (config or ModelConfig()).for_role("developer")
 
     def build_system_prompt(self, rules: list[str] | None = None) -> str:
         """Compose P_D(k) = base prompt + accumulated distilled rules."""

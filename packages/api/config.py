@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     small_llm_provider: str = ""
     small_llm_model: str = ""
 
+    # Per-role sampling temperatures (unset = ModelConfig tuned defaults:
+    # attacker 0.9, developer 0.4, distiller 0.0).
+    attacker_temperature: float | None = None
+    developer_temperature: float | None = None
+    distiller_temperature: float | None = None
+
     # Optional fallback providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""

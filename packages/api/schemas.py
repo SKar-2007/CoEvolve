@@ -3,7 +3,6 @@
 from datetime import datetime
 from enum import Enum
 
-from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -18,13 +17,13 @@ class EpisodeRead(BaseModel):
 
     episode_id: str
     status: EpisodeStatus
-    vulnerability_class: Optional[str] = None
-    difficulty_tier: Optional[int] = None
-    outcome: Optional[int] = None
-    task_description: Optional[str] = None
-    patch_text: Optional[str] = None
-    judge_verdict: Optional[dict] = None
-    error: Optional[str] = None
+    vulnerability_class: str | None = None
+    difficulty_tier: int | None = None
+    outcome: int | None = None
+    task_description: str | None = None
+    patch_text: str | None = None
+    judge_verdict: dict | None = None
+    error: str | None = None
     attacker_rating: float = 1500.0
     developer_rating: float = 1500.0
     prompt_version: int = 1
@@ -55,12 +54,12 @@ class TrainingRunResponse(BaseModel):
     judge_outcome: int
     judge_verdict: dict = Field(default_factory=dict)
     rule_distilled: bool = False
-    rule_text: Optional[str] = None
+    rule_text: str | None = None
     regression_passed: bool = True
     elo_before: dict[str, float] = Field(default_factory=dict)
     elo_after: dict[str, float] = Field(default_factory=dict)
     duration_s: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class RuleRead(BaseModel):
@@ -88,7 +87,7 @@ class PromptRead(BaseModel):
     base_prompt: str
     rules: list = Field(default_factory=list)
     commit_message: str = ""
-    parent_version: Optional[int] = None
+    parent_version: int | None = None
     created_at: datetime
 
 
@@ -143,9 +142,9 @@ class TrainingJobRead(BaseModel):
     context_hint: str = ""
     max_retries: int = 3
     use_react: bool = False
-    queue_position: Optional[int] = None
+    queue_position: int | None = None
     created_at: float = 0.0
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+    started_at: float | None = None
+    completed_at: float | None = None
     result: dict = Field(default_factory=dict)
     error: str = ""

@@ -5,6 +5,7 @@ from __future__ import annotations
 from packages.judge.dast.executor import (
     SUCCESS_PATTERNS,
     ExploitExecutor,
+    PayloadLibrary,
     StaticPayloadLibrary,
 )
 from packages.judge.engine import HybridJudge, JudgeVerdict
@@ -36,6 +37,51 @@ class TestStaticPayloadLibrary:
         payload = lib.get("SQLi")
         assert payload.payload == "' OR '1'='1' --"
         assert payload.class_id == "SQLi"
+
+
+class TestPayloadLibrary:
+    """Test the JSON-backed payload library (default path)."""
+
+    EXPECTED_CLASSES = {
+        "SQLi",
+        "PathTraversal",
+        "CommandInjection",
+        "XSS",
+        "SSRF",
+        "Deserialization",
+        "SSTI",
+        "XXE",
+        "OpenRedirect",
+        "PrototypePollution",
+    }
+
+    def test_default_path_loads_all_classes(self):
+        lib = PayloadLibrary()
+        assert set(lib.classes()) >= self.EXPECTED_CLASSES
+
+    def test_minimum_depth_per_class(self):
+        lib = PayloadLibrary()
+        for class_id in self.EXPECTED_CLASSES:
+            assert len(lib.all(class_id)) >= 3, f"{class_id} needs >= 3 payloads"
+
+    def test_rotation_wraps(self):
+        lib = PayloadLibrary()
+        n = len(lib.all("SQLi"))
+        assert lib.get("SQLi", 0).payload == lib.get("SQLi", n).payload
+
+    def test_missing_file_falls_back_to_static(self, tmp_path):
+        lib = StaticPayloadLibrary(path=tmp_path / "nope.json")
+        assert "SQLi" in lib.classes()
+        assert lib.get("SQLi").payload == "' OR '1'='1' --"
+
+    def test_unknown_class_raises(self):
+        lib = PayloadLibrary()
+        try:
+            lib.get("NoSuchClass")
+        except KeyError:
+            pass
+        else:
+            raise AssertionError("expected KeyError")
 
 
 class TestExploitExecutor:

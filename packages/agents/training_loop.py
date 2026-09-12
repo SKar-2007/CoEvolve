@@ -17,7 +17,7 @@ from .attacker.generator import AttackerAgent, ContextFile, GeneratedTask
 from .developer.executor import DeveloperAgent
 from .developer.tools import ReActDeveloperAgent
 from .distiller.pipeline import DistilledRule, DistillerAgent
-from .llm import LLMClient, LLMResponse
+from .llm import LLMClient, LLMResponse, ModelConfig
 from .regression_guard.guard import HistoricalArchive, RegressionGuard
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,7 @@ class TrainingLoop:
         workspace_dir: str | Path = "/tmp/coevolve_workspace",
         reporter: StepReporter | None = None,
         small_llm: LLMClient | None = None,
+        model_config: ModelConfig | None = None,
     ) -> None:
         """Create the loop.
 
@@ -159,9 +160,12 @@ class TrainingLoop:
             small_llm: optional cheaper client for the constrained distillation
                 step (falls back to ``llm``). Enables cost tuning per role,
                 e.g. ``ModelConfig.small_model``, without changing behavior.
+            model_config: sampling discipline for all roles (per-role
+                temperatures with fallback to ``temperature``).
         """
         self.llm = llm
         self.reporter = reporter
+        self.model_config = model_config or ModelConfig()
 
         # Wrap LLM with reporting callback if a reporter is provided
         if reporter is not None:
@@ -176,19 +180,19 @@ class TrainingLoop:
         else:
             reporting_llm = llm
             reporting_small = small_llm if small_llm is not None else llm
-        self.attacker = AttackerAgent(reporting_llm)
+        self.attacker = AttackerAgent(reporting_llm, config=self.model_config)
 
         if use_react:
             workspace = Path(workspace_dir)
             workspace.mkdir(parents=True, exist_ok=True)
             self.developer: DeveloperAgent | ReActDeveloperAgent = ReActDeveloperAgent(
-                reporting_llm, workspace=workspace
+                reporting_llm, workspace=workspace, config=self.model_config
             )
             logger.info("Using ReAct Developer Agent (tool-use enabled)")
         else:
-            self.developer = DeveloperAgent(reporting_llm)
+            self.developer = DeveloperAgent(reporting_llm, config=self.model_config)
 
-        self.distiller = DistillerAgent(reporting_small)
+        self.distiller = DistillerAgent(reporting_small, config=self.model_config)
 
         # Pluggable dependencies — import lazily to avoid circular imports
         if judge is not None:

@@ -69,7 +69,7 @@ def build_loop(prompt_version: int, use_react: bool = False):
     the SSE stream, and the worker (which has its own env-override path and
     does not use this helper).
     """
-    from ..agents.llm import build_client
+    from ..agents.llm import ModelConfig, build_client
     from ..agents.training_loop import TrainingLoop
     from .config import get_settings
 
@@ -81,8 +81,21 @@ def build_loop(prompt_version: int, use_react: bool = False):
     if resolved_small is not None:
         small_provider, small_key, small_model = resolved_small
         small = build_client(small_provider, small_model, api_key=small_key)
+    # Only forward explicitly configured overrides; otherwise ModelConfig's
+    # tuned per-role defaults apply (passing None would clobber them).
+    model_config = ModelConfig()
+    if settings.attacker_temperature is not None:
+        model_config.attacker_temperature = settings.attacker_temperature
+    if settings.developer_temperature is not None:
+        model_config.developer_temperature = settings.developer_temperature
+    if settings.distiller_temperature is not None:
+        model_config.distiller_temperature = settings.distiller_temperature
     return TrainingLoop(
-        llm=llm, prompt_version=prompt_version, use_react=use_react, small_llm=small
+        llm=llm,
+        prompt_version=prompt_version,
+        use_react=use_react,
+        small_llm=small,
+        model_config=model_config,
     )
 
 

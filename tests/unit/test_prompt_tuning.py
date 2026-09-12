@@ -3,10 +3,11 @@ contracts must not)."""
 
 from __future__ import annotations
 
-from packages.agents.attacker.generator import ATTACKER_SYSTEM_PROMPT
+from packages.agents.attacker.generator import ATTACKER_SYSTEM_PROMPT, AttackerAgent
 from packages.agents.developer.executor import BASE_DEVELOPER_PROMPT, DeveloperAgent
-from packages.agents.distiller.pipeline import DISTILLER_SYSTEM_PROMPT
-from packages.agents.llm import MockClient
+from packages.agents.developer.tools import ReActDeveloperAgent
+from packages.agents.distiller.pipeline import DISTILLER_SYSTEM_PROMPT, DistillerAgent
+from packages.agents.llm import MockClient, ModelConfig
 from packages.agents.training_loop import TrainingLoop
 
 
@@ -70,3 +71,34 @@ class TestSmallLLMRouting:
         main = MockClient("main")
         loop = TrainingLoop(llm=main)
         assert loop.distiller.client is main
+
+
+class TestRoleTemperatures:
+    def test_tuned_defaults(self):
+        cfg = ModelConfig()
+        assert cfg.for_role("attacker") == 0.9
+        assert cfg.for_role("developer") == 0.4
+        assert cfg.for_role("distiller") == 0.0
+        assert cfg.for_role("unknown-role") == cfg.temperature
+
+    def test_explicit_override_wins(self):
+        cfg = ModelConfig(temperature=0.1, attacker_temperature=0.2)
+        assert cfg.for_role("attacker") == 0.2
+        # Untouched roles keep tuned defaults, not the global temperature
+        assert cfg.for_role("developer") == 0.4
+
+    def test_agents_pick_role_temp(self):
+        assert AttackerAgent(MockClient()).temperature == 0.9
+        assert DeveloperAgent(MockClient()).temperature == 0.4
+        assert ReActDeveloperAgent(MockClient()).temperature == 0.4
+        assert DistillerAgent(MockClient()).temperature == 0.0
+
+    def test_loop_forwards_config(self):
+        loop = TrainingLoop(llm=MockClient(), model_config=ModelConfig(attacker_temperature=0.11))
+        assert loop.attacker.temperature == 0.11
+        assert loop.developer.temperature == 0.4
+
+    def test_default_loop_uses_tuned_temps(self):
+        loop = TrainingLoop(llm=MockClient())
+        assert (loop.attacker.temperature, loop.developer.temperature) == (0.9, 0.4)
+        assert loop.distiller.temperature == 0.0

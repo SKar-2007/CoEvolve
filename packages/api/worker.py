@@ -37,6 +37,7 @@ class TrainingWorker:
         self._queue: Any = None
         self._llm: Any = None
         self._small_llm: Any = None
+        self._model_config: Any = None
 
     def _ensure_initialized(self) -> None:
         """Lazy-init queue and LLM client (uses shared resolve_llm_provider)."""
@@ -68,6 +69,18 @@ class TrainingWorker:
         if provider == "groq":
             api_key = os.getenv("GROQ_API_KEY", key or "")
         self._llm = build_client(provider, model, api_key=api_key)
+
+        # Sampling discipline: tuned per-role defaults, env-overridable.
+        # Only forward explicitly set values so tuned defaults survive.
+        from packages.agents.llm import ModelConfig
+
+        self._model_config = ModelConfig()
+        if settings.attacker_temperature is not None:
+            self._model_config.attacker_temperature = settings.attacker_temperature
+        if settings.developer_temperature is not None:
+            self._model_config.developer_temperature = settings.developer_temperature
+        if settings.distiller_temperature is not None:
+            self._model_config.distiller_temperature = settings.distiller_temperature
 
         # Optional cheaper distillation client (None = reuse main client).
         # Not cost-tracked; distillation is a small fraction of tokens.
@@ -137,6 +150,7 @@ class TrainingWorker:
                 prompt_version=prompt_version,
                 use_react=job.use_react,
                 small_llm=getattr(self, "_small_llm", None),
+                model_config=getattr(self, "_model_config", None),
             )
             config = EpisodeConfig(
                 vulnerability_class=job.vulnerability_class,

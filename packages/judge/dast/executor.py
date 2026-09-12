@@ -13,7 +13,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-PAYLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "exploit_payloads"
+# executor.py is packages/judge/dast/executor.py -> repo root is 4 levels up.
+PAYLOADS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
+PAYLOADS_FILE = PAYLOADS_DIR / "exploit_payloads.json"
 
 
 class ExploitPayload(BaseModel):
@@ -47,8 +49,8 @@ class DASTResult:
 class PayloadLibrary:
     """Loads and selects exploit payloads per vulnerability class."""
 
-    def __init__(self, path: Path = PAYLOADS_DIR / "payloads.json"):
-        self.path = Path(path)
+    def __init__(self, path: Path | None = None):
+        self.path = Path(path) if path is not None else PAYLOADS_FILE
         self._payloads: dict[str, list[ExploitPayload]] = {}
         if self.path.exists():
             raw = json.loads(self.path.read_text())
@@ -119,7 +121,7 @@ class StaticPayloadLibrary(PayloadLibrary):
     }
 
     def __init__(self, path: Path | None = None):
-        super().__init__(path or PAYLOADS_DIR / "payloads.json")
+        super().__init__(path or PAYLOADS_FILE)
         for class_id, items in self.STATIC_PAYLOADS.items():
             if class_id not in self._payloads:
                 self._payloads[class_id] = [

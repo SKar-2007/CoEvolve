@@ -307,6 +307,22 @@ class ModelConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 4096
 
+    # Per-role temperature overrides (None = fall back to `temperature`).
+    # Tuned defaults rationale: attacker high for trap diversity, developer
+    # low-mid for precise patches, distiller 0 for deterministic rules.
+    attacker_temperature: float | None = 0.9
+    developer_temperature: float | None = 0.4
+    distiller_temperature: float | None = 0.0
+
+    def for_role(self, role: str) -> float:
+        """Return the sampling temperature for an agent role."""
+        override = {
+            "attacker": self.attacker_temperature,
+            "developer": self.developer_temperature,
+            "distiller": self.distiller_temperature,
+        }.get(role)
+        return override if override is not None else self.temperature
+
 
 class MockClient(LLMClient):
     """Mock LLM client for demo/testing without API keys."""

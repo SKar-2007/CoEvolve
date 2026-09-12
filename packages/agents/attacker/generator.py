@@ -374,7 +374,7 @@ class AttackerAgent:
     def __init__(self, client: LLMClient, config: ModelConfig | None = None):
         self.client = client
         self.config = config or ModelConfig()
-        self.temperature = self.config.temperature
+        self.temperature = self.config.for_role("attacker")
 
     def generate(
         self,
