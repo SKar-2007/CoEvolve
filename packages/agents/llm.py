@@ -150,6 +150,50 @@ class GeminiClient(LLMClient):
         if not self._api_key:
             raise LLMError("GEMINI_API_KEY not set")
 
+
+class GroqClient(LLMClient):
+    """Groq LPU inference client."""
+
+    def __init__(self, model: str, api_key: str | None = None):
+        super().__init__(model)
+        self._api_key = api_key or os.getenv("GROQ_API_KEY")
+        if not self._api_key:
+            raise LLMError("GROQ_API_KEY not set")
+        self._base_url = "https://api.groq.com/openai/v1"
+
+    def generate(self, system, user, temperature=0.7, max_tokens=4096):
+        try:
+            from openai import OpenAI  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise LLMError("openai SDK not installed") from exc
+        client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        resp = client.chat.completions.create(
+            model=self.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        choice = resp.choices[0].message
+        return LLMResponse(
+            text=choice.content or "",
+            provider="groq",
+            model=self.model,
+            prompt_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+            completion_tokens=resp.usage.completion_tokens if resp.usage else 0,
+            raw=resp.model_dump(),
+        )
+
+
+class GeminiClient(LLMClient):
+    def __init__(self, model: str, api_key: str | None = None):
+        super().__init__(model)
+        self._api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not self._api_key:
+            raise LLMError("GEMINI_API_KEY not set")
+
     def generate(self, system, user, temperature=0.7, max_tokens=4096):
         try:
             from google import genai  # type: ignore[import-not-found]
@@ -189,6 +233,42 @@ class GeminiClient(LLMClient):
                     continue
                 raise LLMError(f"Gemini API error: {exc}") from exc
         raise LLMError("Gemini API failed after 3 retries")
+
+
+class HuggingFaceClient(LLMClient):
+    """HuggingFace Inference API client."""
+
+    def __init__(self, model: str, api_key: str | None = None):
+        super().__init__(model)
+        self._api_key = api_key or os.getenv("HUGGINGFACE_API_KEY")
+        if not self._api_key:
+            raise LLMError("HUGGINGFACE_API_KEY not set")
+        self._base_url = "https://router.huggingface.co/v1"
+
+    def generate(self, system, user, temperature=0.7, max_tokens=4096):
+        try:
+            from openai import OpenAI  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise LLMError("openai SDK not installed") from exc
+        client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        resp = client.chat.completions.create(
+            model=self.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        choice = resp.choices[0].message
+        return LLMResponse(
+            text=choice.content or "",
+            provider="huggingface",
+            model=self.model,
+            prompt_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+            completion_tokens=resp.usage.completion_tokens if resp.usage else 0,
+            raw=resp.model_dump(),
+        )
 
 
 class ModelConfig(BaseModel):
@@ -269,8 +349,12 @@ def build_client(provider: str, model: str, api_key: str | None = None) -> LLMCl
         return AnthropicClient(model, api_key)
     if provider == "openai":
         return OpenAIClient(model, api_key)
-    if provider in {"openrouter", "deepseek", "groq"}:
+    if provider in {"openrouter", "deepseek"}:
         return OpenRouterClient(model, api_key)
+    if provider == "groq":
+        return GroqClient(model, api_key)
     if provider == "gemini":
         return GeminiClient(model, api_key)
+    if provider in {"huggingface", "hf"}:
+        return HuggingFaceClient(model, api_key)
     raise LLMError(f"Unknown provider: {provider}")

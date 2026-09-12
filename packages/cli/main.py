@@ -66,8 +66,19 @@ def run(
             llm = build_client("mock", "mock")
         else:
             settings = get_settings()
-            provider = "anthropic" if settings.anthropic_api_key else "openai"
-            llm = build_client(provider, settings.llm_model)
+            if settings.anthropic_api_key:
+                provider, key = "anthropic", settings.anthropic_api_key
+            elif settings.groq_api_key:
+                provider, key = "groq", settings.groq_api_key
+            elif settings.huggingface_api_key:
+                provider, key = "huggingface", settings.huggingface_api_key
+            elif settings.openrouter_api_key:
+                provider, key = "openrouter", settings.openrouter_api_key
+            elif settings.openai_api_key:
+                provider, key = "openai", settings.openai_api_key
+            else:
+                provider, key = "mock", None
+            llm = build_client(provider, settings.llm_model, api_key=key)
 
         # Run episode
         loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=react)

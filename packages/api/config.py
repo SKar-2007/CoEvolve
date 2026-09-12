@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openrouter_api_key: str = ""
     gemini_api_key: str = ""
+    huggingface_api_key: str = ""
+    groq_api_key: str = ""
 
     jwt_secret: str = "change-me"
     log_level: str = "INFO"

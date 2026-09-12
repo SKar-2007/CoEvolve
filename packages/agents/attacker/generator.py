@@ -154,6 +154,7 @@ class AttackerAgent:
             system=ATTACKER_SYSTEM_PROMPT,
             user=user,
             temperature=self.temperature,
+            max_tokens=950,
         )
         task = self._parse_task(resp.text)
         task.task_id = f"task-{episode_k}" if episode_k is not None else "task-pending"

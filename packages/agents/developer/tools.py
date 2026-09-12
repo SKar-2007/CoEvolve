@@ -364,6 +364,7 @@ class ReActDeveloperAgent:
                 system=system,
                 user=json.dumps(messages),
                 temperature=self.temperature,
+                max_tokens=950,
             )
             text = response.text
 
