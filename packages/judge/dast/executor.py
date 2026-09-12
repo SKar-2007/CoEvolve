@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -125,15 +128,15 @@ class StaticPayloadLibrary(PayloadLibrary):
 
 
 SUCCESS_PATTERNS: dict[str, list[re.Pattern[str]]] = {
-    "SQLi": [re.compile(r"root:x:0:0"), re.compile(r"(\d+)\s+records", re.I)],
-    "PathTraversal": [re.compile(r"root:x:0:0"), re.compile(r"/bin/bash")],
+    "SQLi": [re.compile(r'"username"'), re.compile(r"admin", re.I)],
+    "PathTraversal": [re.compile(r"root:x:0:0"), re.compile(r"SECRET_DATA_42")],
     "CommandInjection": [re.compile(r"root:x:0:0"), re.compile(r"uid=\d+")],
-    "SSRF": [re.compile(r"instance-id"), re.compile(r"ami-id")],
-    "XSS": [re.compile(r"<script>", re.I)],
+    "SSRF": [re.compile(r"instance-id"), re.compile(r"ami-id"), re.compile(r"local-ipv4")],
+    "XSS": [re.compile(r"<script>", re.I), re.compile(r"Search results for:")],
     "Deserialization": [re.compile(r"uid=\d+"), re.compile(r"root")],
-    "SSTI": [re.compile(r"49\b")],
+    "SSTI": [re.compile(r"49\b"), re.compile(r"<h1>Hello")],
     "XXE": [re.compile(r"root:x:0:0")],
-    "OpenRedirect": [re.compile(r"evil\.com")],
+    "OpenRedirect": [re.compile(r"evil\.com"), re.compile(r"Location:.*/redirect\?url=")],
     "PrototypePollution": [re.compile(r"isAdmin", re.I), re.compile(r"__proto__")],
 }
 
@@ -180,12 +183,64 @@ class ExploitExecutor:
             evidence=evidence[:5],
         )
 
+    def execute_http(
+        self,
+        class_id: str,
+        base_url: str,
+        endpoint: str = "/",
+        param_name: str = "name",
+        timeout: int = 10,
+        payload_override: str | None = None,
+        follow_redirects: bool = True,
+    ) -> DASTResult:
+        """Execute a payload against an HTTP endpoint."""
+        payload = self.library.get(class_id)
+        actual_payload = payload_override or payload.payload
+        url = f"{base_url}{endpoint}?{param_name}={urllib.parse.quote(actual_payload)}"
+        start = _now_ms()
+        try:
+            req = urllib.request.Request(url)
+            if not follow_redirects:
+                # Manually handle to avoid following redirects
+                class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+                    def redirect_request(self, req, fp, code, msg, headers, newurl):
+                        raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+
+                opener = urllib.request.build_opener(NoRedirectHandler)
+                resp = opener.open(req, timeout=timeout)
+            else:
+                resp = urllib.request.urlopen(req, timeout=timeout)
+            with resp:
+                stdout = resp.read().decode("utf-8", errors="replace")
+                stderr = ""
+        except urllib.error.HTTPError as e:
+            # For redirect detection, 3xx errors contain Location header
+            stdout = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            location = e.headers.get("Location", "")
+            stderr = ""
+            if location:
+                stdout += f"\nLocation: {location}"
+        except Exception as e:
+            stdout = ""
+            stderr = str(e)
+        elapsed = _now_ms() - start
+        evidence = self._match_evidence(class_id, stdout)
+
+        return DASTResult(
+            exploit_class=class_id,
+            payload=actual_payload,
+            success=bool(evidence),
+            stdout=stdout[:4000],
+            stderr=stderr[:4000],
+            execution_time_ms=elapsed,
+            evidence=evidence[:5],
+        )
+
     def _match_evidence(self, class_id: str, output: str) -> list[str]:
         patterns = SUCCESS_PATTERNS.get(class_id, [])
         return [p.pattern for p in patterns if p.search(output)]
 
 
 def _now_ms() -> int:
-    import time
 
     return int(time.time() * 1000)

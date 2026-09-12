@@ -1,5 +1,5 @@
 .PHONY: install dev test lint typecheck docker-up docker-down docker-prod setup run-api \
-       demo benchmark stress clean build-sandbox
+       demo benchmark stress clean build-sandbox dast
 
 # ---------------------------------------------------------------------------
 # Development
@@ -79,6 +79,9 @@ train:
 
 stress:
 	python scripts/benchmark.py --episodes 1000
+
+dast:
+	python -m packages.judge.dast.runner --all
 
 # ---------------------------------------------------------------------------
 # Cleanup
