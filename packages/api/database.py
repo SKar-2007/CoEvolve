@@ -62,3 +62,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def reset_engine():
+    """Reset the global engine and session factory (for testing)."""
+    global _engine, _session_factory
+    _engine = None
+    _session_factory = None

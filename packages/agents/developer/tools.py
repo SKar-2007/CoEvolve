@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -122,9 +123,10 @@ class RunShellTool:
         if any(b in command for b in self.BLOCKED):
             return f"ERROR: blocked dangerous command: {command}"
         try:
+            args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -189,11 +191,11 @@ class RunTestsTool:
 
     def execute(self, **kwargs: Any) -> str:
         test_path = kwargs.get("path", "tests")
-        cmd = f"python -m pytest {test_path} -x -q --tb=short 2>&1"
+        cmd = ["python", "-m", "pytest", test_path, "-x", "-q", "--tb=short"]
         try:
             result = subprocess.run(
                 cmd,
-                shell=True,
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -221,8 +223,8 @@ class GitDiffTool:
     def execute(self, **kwargs: Any) -> str:
         try:
             result = subprocess.run(
-                "git diff",
-                shell=True,
+                ["git", "diff"],
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -246,11 +248,11 @@ class GitCommitTool:
         message = kwargs.get("message", "auto-commit")
         try:
             subprocess.run(
-                "git add -A", shell=True, cwd=str(self.workspace), check=True, timeout=10
+                ["git", "add", "-A"], shell=False, cwd=str(self.workspace), check=True, timeout=10
             )
             result = subprocess.run(
-                f"git commit -m {json.dumps(message)}",
-                shell=True,
+                ["git", "commit", "-m", message],
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,

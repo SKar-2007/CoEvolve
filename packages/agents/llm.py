@@ -143,14 +143,6 @@ class OpenRouterClient(OpenAIClient):
         )
 
 
-class GeminiClient(LLMClient):
-    def __init__(self, model: str, api_key: str | None = None):
-        super().__init__(model)
-        self._api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self._api_key:
-            raise LLMError("GEMINI_API_KEY not set")
-
-
 class GroqClient(LLMClient):
     """Groq LPU inference client."""
 
