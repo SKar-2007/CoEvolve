@@ -205,21 +205,50 @@ make test
 ## Testing
 
 ```
-104 tests passing
-├── tests/unit/           # 28 unit tests
+127 tests passing (6 Docker tests require daemon)
+├── tests/unit/           # 44 unit tests
 │   ├── test_elo.py           # Elo calculator + difficulty
 │   ├── test_judge.py         # Judge verdict + DAST
 │   ├── test_history.py       # Rating history tracker
 │   ├── test_dedupe.py        # Semantic deduplication
 │   ├── test_regression_guard.py  # Regression detection
 │   └── test_telemetry.py     # Prometheus metrics
-├── tests/integration/    # 76 integration tests
+├── tests/integration/    # 83 integration tests
 │   ├── test_agents_pipeline.py  # Full attacker→developer→judge pipeline
 │   ├── test_api_crud.py         # All API endpoints
 │   ├── test_evolution.py        # Prompt store versioning
-│   └── test_sandbox.py          # Sandbox config + validation
+│   ├── test_sandbox.py          # Sandbox config + validation
+│   └── test_sandbox_lifecycle.py # Container lifecycle (29 tests)
 └── Makefile targets: test, lint, typecheck
 ```
+
+## Deployment
+
+Production deployment using Docker Compose:
+
+```bash
+# 1. Configure environment
+cp .env.example .env   # Edit with your secrets
+
+# 2. Build sandbox image
+make build-sandbox
+
+# 3. Start all services
+make docker-prod
+
+# 4. Verify
+curl http://localhost:8000/health
+```
+
+See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, troubleshooting).
+
+| Service | Port | Description |
+|---------|------|-------------|
+| API | 8000 | FastAPI REST API |
+| PostgreSQL | 5432 | Episode/rule database |
+| Redis | 6379 | Task queue |
+| Prometheus | 9090 | Metrics collection |
+| Grafana | 3000 | Dashboards |
 
 ## Documentation
 
