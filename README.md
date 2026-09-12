@@ -55,6 +55,7 @@ automatically matches task difficulty to developer capability.
 | **Distiller Agent** | Converts failure traces into imperative security rules |
 | **Regression Guard** | Validates new rules against all previously-passing tasks |
 | **Elo Rating** | Zero-sum adaptive difficulty matching (10 tiers, 1000-2500 range) |
+| **Batch Training** | Multi-episode sessions with convergence detection and per-class win rates |
 
 ### Prompt Evolution
 
@@ -71,29 +72,31 @@ automatically matches task difficulty to developer capability.
 |-----------|-------------|
 | **FastAPI API** | 16 REST endpoints for episodes, prompts, rules, Elo, training, jobs |
 | **Redis Task Queue** | Async training jobs with in-memory fallback |
+| **Job Worker** | Background worker that processes async training jobs |
 | **Docker Sandbox** | 7-layer container isolation with seccomp profiles |
 | **Telemetry** | Prometheus metrics + Grafana dashboards |
 | **Alerting** | Slack, Email (SMTP), PagerDuty notification channels |
 | **Cost Tracking** | Per-call token counting with provider-specific pricing |
 | **LLM Caching** | LRU cache for deterministic calls (temperature=0) |
 
+### LLM Support
+
+| Provider | Models | Auth |
+|----------|--------|------|
+| **OpenRouter** | DeepSeek, Claude, GPT-4o, any model | `OPENROUTER_API_KEY` |
+| **Anthropic** | Claude Sonnet 4.5, Haiku 4.5 | `ANTHROPIC_API_KEY` |
+| **OpenAI** | GPT-4o, GPT-4o-mini | `OPENAI_API_KEY` |
+
 ## Quick Start
 
 ### 1. Install dependencies
 
 ```bash
-# Clone and enter the repo
 git clone https://github.com/SKar-2007/CoEvolve.git
 cd CoEvolve
-
-# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate
-
-# Install all packages in dev mode
 make install
-
-# Install dev tools
 make dev
 ```
 
@@ -101,7 +104,7 @@ make dev
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys and database URL
+# Edit .env with your API keys
 ```
 
 ### 3. Start infrastructure
@@ -110,20 +113,24 @@ cp .env.example .env
 docker compose up -d db redis prometheus grafana
 ```
 
-### 4. Run the API
+### 4. Run the API + Worker
 
 ```bash
-uvicorn packages.api.main:app --reload --port 8000
+# Terminal 1: API
+make run-api
+
+# Terminal 2: Worker (processes async jobs)
+make worker
 ```
 
 ### 5. Run the demo
 
 ```bash
 # Mock mode (no API key needed)
-python scripts/demo.py
+make demo
 
-# Real LLM calls
-python scripts/demo.py --real --episodes 5
+# Real LLM calls (requires OPENROUTER_API_KEY in .env)
+make demo-real
 ```
 
 ### 6. Run tests
@@ -149,9 +156,12 @@ make test
 | `make build-sandbox` | Build the sandbox Docker image |
 | `make run-api` | Start API in dev mode (auto-reload) |
 | `make run-api-prod` | Start API in production mode (4 workers) |
+| `make worker` | Start async job worker (polls queue) |
+| `make worker-once` | Process one async job and exit |
 | `make demo` | Run demo in mock mode |
 | `make demo-real` | Run demo with real LLM calls |
 | `make benchmark` | Run 100-episode benchmark |
+| `make train` | Run 100-episode batch training |
 | `make stress` | Run 1000-episode stress test |
 | `make clean` | Remove caches and temp files |
 
@@ -173,7 +183,7 @@ make test
 | GET | `/rules` | List security rules |
 | GET | `/rules/{id}` | Get specific rule |
 | POST | `/training/run` | Run training episode (sync) |
-| POST | `/training/async` | Enqueue training episode |
+| POST | `/training/async` | Enqueue training episode (async) |
 | GET | `/training/jobs` | List training jobs |
 | GET | `/training/jobs/{id}` | Get job status |
 
@@ -182,61 +192,59 @@ make test
 ```python
 import httpx
 
-# Create an episode
-resp = httpx.post("http://localhost:8000/episodes", json={
-    "vulnerability_classes": ["SQLi"],
-    "max_duration_minutes": 15,
-})
-episode = resp.json()
-
 # Run a training episode (synchronous)
 resp = httpx.post("http://localhost:8000/training/run", json={
     "vulnerability_class": "SQLi",
     "language": "python",
+    "use_react": True,  # Use ReAct tool-use developer
 })
 result = resp.json()
 print(f"Outcome: {result['judge_outcome']}, Duration: {result['duration_s']:.1f}s")
 
-# Check Elo ratings
-resp = httpx.get("http://localhost:8000/elo")
-print(resp.json())  # {"attacker": 1500.0, "developer": 1500.0}
+# Enqueue async training job
+resp = httpx.post("http://localhost:8000/training/async", json={
+    "vulnerability_class": "XSS",
+})
+job = resp.json()
+print(f"Job {job['job_id']} enqueued")
 
-# List security rules
-resp = httpx.get("http://localhost:8000/rules")
-for rule in resp.json():
-    print(f"Rule: {rule['rule_text'][:60]}...")
+# Check job status
+resp = httpx.get(f"http://localhost:8000/training/jobs/{job['job_id']}")
+print(resp.json())
 ```
 
 ### Programmatic Usage
 
 ```python
-from packages.agents.training_loop import TrainingLoop
-from packages.agents.llm import LLMClient
+from packages.agents.llm import build_client
+from packages.agents.training_loop import TrainingLoop, EpisodeConfig
 
-# Initialize with your LLM provider
-client = LLMClient(provider="anthropic", model="claude-sonnet-4-5")
-loop = TrainingLoop(llm_client=client)
+# Initialize with OpenRouter
+llm = build_client("openrouter", "deepseek/deepseek-chat-v3-0324")
 
 # Run a single episode
-result = loop.run_episode(vulnerability_class="SQLi")
-print(f"Outcome: {result.verdict.outcome}")
-print(f"Rule: {result.distilled_rule}")
+loop = TrainingLoop(llm=llm)
+config = EpisodeConfig(vulnerability_class="SQLi")
+trace = loop.run_episode(config)
+print(f"Outcome: {trace.judge_outcome}, Rule: {trace.distilled_rule}")
 
-# Run multiple episodes
-for i in range(10):
-    result = loop.run_episode(vulnerability_class="XSS")
-    print(f"Episode {i+1}: outcome={result.verdict.outcome}")
+# Batch training with convergence detection
+from packages.agents.batch_trainer import TrainingSession
+
+session = TrainingSession(llm=llm, episodes=100)
+report = session.run()
+print(f"Secure rate: {report.secure_rate:.1%}")
 ```
 
 ## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `LLM_PROVIDER` | `openrouter` | Default LLM provider |
+| `LLM_MODEL` | `deepseek/deepseek-chat-v3-0324` | Default model |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
-| `OPENROUTER_API_KEY` | — | OpenRouter API key |
-| `LLM_PROVIDER` | `anthropic` | Default LLM provider |
-| `LLM_MODEL` | `claude-sonnet-4-5` | Default model |
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL connection |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection |
 | `JWT_SECRET` | `change-me` | JWT signing secret |
@@ -269,8 +277,15 @@ for i in range(10):
 make benchmark          # 100 episodes
 make stress             # 1000 episodes
 
-# Custom
-python scripts/benchmark.py --episodes 5000 --output report.json
+# Real LLM
+python scripts/benchmark.py --episodes 50 --real
+
+# ReAct developer agent
+python scripts/benchmark.py --episodes 20 --real --react
+
+# Batch training with convergence detection
+make train              # 100 episodes
+python scripts/train.py --episodes 200 --real --react --output report.json
 ```
 
 ### Stress Test Results
@@ -304,6 +319,7 @@ See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, tro
 | Service | Port | Description |
 |---------|------|-------------|
 | API | 8000 | FastAPI REST API |
+| Worker | — | Background training job processor |
 | PostgreSQL | 5432 | Episode/rule database |
 | Redis | 6379 | Task queue |
 | Prometheus | 9090 | Metrics collection |
@@ -319,9 +335,11 @@ packages/
 │   ├── schemas.py          # Pydantic request/response schemas
 │   ├── config.py           # pydantic-settings configuration
 │   ├── database.py         # Engine, session, base classes
-│   └── task_queue.py       # Redis-backed async job queue
+│   ├── task_queue.py       # Redis-backed async job queue
+│   └── worker.py           # Background job worker
 ├── agents/             # LLM agent implementations
 │   ├── training_loop.py    # Co-evolutionary orchestrator
+│   ├── batch_trainer.py    # Multi-episode training with convergence
 │   ├── cost_tracking.py    # Token/cost tracking + LLM caching
 │   ├── llm.py              # Unified LLM client (Anthropic, OpenAI, OpenRouter)
 │   ├── attacker/           # Adversarial task generator
@@ -359,19 +377,29 @@ packages/
     └── alerting.py             # Slack/Email/PagerDuty notifications
 data/                   # Vulnerability taxonomy + exploit payloads
 tests/                  # 127 tests (unit + integration)
-scripts/                # demo.py, benchmark.py, setup.sh
+scripts/
+├── demo.py                 # End-to-end demo (mock + real)
+├── benchmark.py            # Episode benchmarking
+├── train.py                # Batch training with convergence
+├── setup.sh                # Dev environment setup
+└── test.sh                 # Quick test runner
 docker/
 └── api/Dockerfile          # Multi-stage API image
-.github/workflows/ci.yml   # CI pipeline (lint, typecheck, tests, coverage)
-docker-compose.yml         # Development compose
-docker-compose.prod.yml    # Production compose (resource limits, log rotation)
-requirements.txt           # Runtime dependencies
-requirements-ci.txt        # CI-specific dependencies
-requirements-dev.txt       # Dev tools (ruff, mypy, pytest)
-conftest.py                # Root pytest config (sys.path setup)
-pyproject.toml             # Ruff, mypy, pytest, coverage config
-Makefile                   # Build, test, deploy targets
-DEPLOY.md                  # Full deployment guide
+.github/
+├── workflows/ci.yml        # CI pipeline (lint, typecheck, tests, coverage)
+├── workflows/security.yml  # Secret scanning, dependency audit, Trivy
+└── dependabot.yml          # Auto dependency updates
+docker-compose.yml          # Development compose
+docker-compose.prod.yml     # Production compose (resource limits, log rotation)
+requirements.txt            # Runtime dependencies
+requirements-ci.txt         # CI-specific dependencies
+requirements-dev.txt        # Dev tools (ruff, mypy, pytest)
+conftest.py                 # Root pytest config (sys.path setup)
+pyproject.toml              # Ruff, mypy, pytest, coverage config
+Makefile                    # Build, test, deploy targets
+DEPLOY.md                   # Full deployment guide
+CONTRIBUTING.md             # Contribution guidelines
+CHANGELOG.md                # Version history
 ```
 
 ## Documentation
