@@ -1,0 +1,15 @@
+rules:
+  - id: java.servlet.security.open-redirect
+    message: >
+      Redirect to user-controlled URL without validation. Whitelist
+      allowed redirect targets.
+    languages: [java]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-601"]
+      owasp: ["A01:2021"]
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: response.sendRedirect($URL)
+          - pattern: response.sendRedirect(request.getParameter(...))

@@ -1,0 +1,19 @@
+rules:
+  - id: javascript.express.security.path-traversal
+    message: >
+      File path constructed from user input without sanitization. Use
+      path.resolve() with a base directory and validate the result.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: fs.readFileSync($BASE + $INPUT)
+          - pattern: fs.readFileSync(`...${$INPUT}...`)
+          - pattern: fs.readFileSync($INPUT)
+          - pattern: fs.readFile($BASE + $INPUT, ...)
+          - pattern: path.join($BASE, $INPUT)
+      - pattern-not: fs.readFileSync(path.resolve($BASE, $INPUT))

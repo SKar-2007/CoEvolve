@@ -1,0 +1,16 @@
+rules:
+  - id: java.runtime.security.command-injection
+    message: >
+      User input passed to Runtime.exec(). Avoid shell commands; use
+      ProcessBuilder with argument arrays.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: Runtime.getRuntime().exec($INPUT)
+          - pattern: Runtime.getRuntime().exec($CMD.split(" "))
+          - pattern: ProcessBuilder($CMD).start()

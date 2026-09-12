@@ -1,0 +1,15 @@
+rules:
+  - id: java.deserialization.security.unsafe-deserialization
+    message: >
+      Unsafe deserialization of untrusted data. Use allowlists and
+      alternative serialization formats (JSON, Protocol Buffers).
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $OIS.readObject()
+          - pattern: new ObjectInputStream($INPUT)

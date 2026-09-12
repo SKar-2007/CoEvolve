@@ -1,0 +1,19 @@
+rules:
+  - id: java.xml.security.xxe
+    message: >
+      XML parser configured without disabling external entities. Set
+      FEATURE_SECURE_PROCESSING and disable external DTDs to prevent XXE.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-611"]
+      owasp: ["A05:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: DocumentBuilderFactory.newInstance()
+          - pattern: SAXParserFactory.newInstance()
+          - pattern: XMLInputFactory.newInstance()
+      - pattern-not-inside: |
+          $FACTORY.setFeature(...);
+          ...

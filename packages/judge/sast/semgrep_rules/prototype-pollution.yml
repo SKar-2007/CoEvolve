@@ -1,0 +1,15 @@
+rules:
+  - id: python.javascript.security.prototype-pollution
+    message: >
+      User input may pollute Object.prototype. Use Object.create(null)
+      or validate keys to prevent prototype pollution.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-1321"]
+      owasp: ["A04:2021"]
+      confidence: LOW
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ[$KEY] = $VALUE
+          - pattern: $OBJ.__proto__[$KEY] = $VALUE

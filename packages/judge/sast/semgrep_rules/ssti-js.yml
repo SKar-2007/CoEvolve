@@ -1,0 +1,16 @@
+rules:
+  - id: javascript.express.security.template-injection
+    message: >
+      User input rendered in template string. Use a sandboxed template
+      engine or escape user input before interpolation.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-1336"]
+      owasp: ["A03:2021"]
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: ejs.render($INPUT)
+          - pattern: $ENGINE.render($INPUT)
+          - pattern: $TEMPLATE($INPUT)

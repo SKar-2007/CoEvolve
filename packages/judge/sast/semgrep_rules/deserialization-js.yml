@@ -1,0 +1,16 @@
+rules:
+  - id: javascript.express.security.deserialization
+    message: >
+      Unsafe deserialization of user input. Avoid eval() on untrusted
+      data; use safe parsing libraries with schema validation.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: eval($INPUT)
+          - pattern: Function($INPUT)
+          - pattern: require('node-serialize').unserialize($INPUT)

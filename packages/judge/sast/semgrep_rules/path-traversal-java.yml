@@ -1,0 +1,18 @@
+rules:
+  - id: java.lang.security.path-traversal
+    message: >
+      File path constructed from user input. Validate against a base
+      directory using canonical path checks.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: new File($BASE + $INPUT)
+          - pattern: new File(String.format("...", $INPUT))
+          - pattern: Files.readAllBytes(Paths.get($INPUT))
+          - pattern: new FileInputStream($BASE + $INPUT)
+      - pattern-not: new File($BASE, $INPUT).getCanonicalPath()

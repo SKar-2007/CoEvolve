@@ -1,0 +1,17 @@
+rules:
+  - id: javascript.express.security.xss
+    message: >
+      Unescaped user input rendered in HTML. Use a templating engine with
+      auto-escaping or sanitize output before rendering.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-79"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: res.send($INPUT)
+          - pattern: document.write($INPUT)
+          - pattern: innerHTML = $INPUT
+          - pattern: $EL.innerHTML = $INPUT

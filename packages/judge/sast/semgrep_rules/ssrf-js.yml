@@ -1,0 +1,19 @@
+rules:
+  - id: javascript.express.security.ssrf
+    message: >
+      User-controlled URL passed to HTTP request. Validate and restrict
+      target URLs to prevent server-side request forgery.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: axios.get($URL)
+          - pattern: axios.post($URL)
+          - pattern: fetch($URL)
+          - pattern: http.get($URL)
+          - pattern: https.get($URL)
+          - pattern: request($URL)

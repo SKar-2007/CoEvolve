@@ -108,15 +108,22 @@ class SemgrepScanner:
         """Very small heuristic: keywords from rule metadata vs patch text."""
         keywords = {
             "sql": ("execute", "cursor", "query", "select"),
+            "sql-injection": ("execute", "cursor", "query", "select"),
             "path-traversal": ("open(", "read_file", "join", "getcwd"),
             "ssrf": ("requests.", "urlopen", "http.get", "fetch("),
             "command-injection": ("os.system", "subprocess", "shell=True", "exec("),
-            "xss": ("mark_safe", "innerhtml", "render_template_string"),
-            "deserialization": ("pickle", "yaml.load", "readobject"),
-            "ssti": ("template(", "from_string", "jinja"),
-            "xxe": ("etree", "lxml", "parsedocumentbuilderfactory"),
+            "xss": ("mark_safe", "innerhtml", "render_template_string", "res.send"),
+            "deserialization": ("pickle", "yaml.load", "readobject", "eval("),
+            "ssti": ("template(", "from_string", "jinja", "render("),
+            "xxe": ("etree", "lxml", "parsedocumentbuilderfactory", "domparser"),
+            "open-redirect": ("redirect", "sendredirect"),
+            "prototype-pollution": ("__proto__", "constructor", "merge("),
         }
-        matched = [kw for kw in keywords.get(rule_file.stem, ()) if kw in text]
+        stem = rule_file.stem
+        # Strip language suffix (-js, -java) for keyword lookup
+        base = stem.rsplit("-", 1)[0] if stem.endswith(("-js", "-java")) else stem
+        kw_tuple = keywords.get(stem) or keywords.get(base, ())
+        matched = [kw for kw in kw_tuple if kw in text]
         return bool(matched)
 
     @staticmethod

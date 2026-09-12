@@ -1,0 +1,19 @@
+rules:
+  - id: javascript.express.security.sql-injection
+    message: >
+      SQL query built with string concatenation. Use parameterized queries
+      or an ORM to prevent SQL injection.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $DB.query("..." + $INPUT)
+          - pattern: $DB.query(`...${$INPUT}...`)
+          - pattern: $POOL.query("..." + $INPUT)
+          - pattern: $POOL.query(`...${$INPUT}...`)
+          - pattern: connection.query("..." + $INPUT)
+      - pattern-not: $DB.query("... ? ...", [..., $INPUT, ...])

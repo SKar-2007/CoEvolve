@@ -1,0 +1,16 @@
+rules:
+  - id: java.template.security.template-injection
+    message: >
+      User input interpolated in template engine. Use a sandboxed
+      template engine or escape user input before rendering.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-1336"]
+      owasp: ["A03:2021"]
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: $ENGINE.evaluate($INPUT, ...)
+          - pattern: VelocityEngine.evaluate(...)
+          - pattern: FreeMarkerTemplate.process(...)

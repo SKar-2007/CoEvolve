@@ -1,0 +1,17 @@
+rules:
+  - id: javascript.express.security.prototype-pollution
+    message: >
+      User input merged into object unsafely. Use Object.create(null)
+      or validate keys to prevent prototype pollution.
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-1321"]
+      owasp: ["A04:2021"]
+      confidence: LOW
+    patterns:
+      - pattern-either:
+          - pattern: merge($TARGET, $SOURCE)
+          - pattern: deepMerge($TARGET, $SOURCE)
+          - pattern: $OBJ.__proto__[$KEY] = $VALUE
+          - pattern: $OBJ['constructor']['prototype'][$KEY] = $VALUE

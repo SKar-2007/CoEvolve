@@ -1,0 +1,16 @@
+rules:
+  - id: python.flask.security.open-redirect
+    message: >
+      Redirect to user-controlled URL without validation. Whitelist
+      allowed redirect targets or validate against a trusted domain list.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-601"]
+      owasp: ["A01:2021"]
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: flask.redirect($URL)
+          - pattern: return redirect($URL)
+          - pattern: redirect(request.args.get(...))

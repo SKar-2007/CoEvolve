@@ -1,0 +1,18 @@
+rules:
+  - id: java.jdbc.security.sql-injection
+    message: >
+      SQL query built with string concatenation. Use PreparedStatement
+      with parameterized queries instead.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $CONN.createStatement().executeQuery("..." + $INPUT)
+          - pattern: $CONN.createStatement().executeQuery(String.format("...", $INPUT))
+          - pattern: $STMT.execute("..." + $INPUT)
+          - pattern: $QUERY + $INPUT
+      - pattern-not: $CONN.prepareStatement("... ? ...")

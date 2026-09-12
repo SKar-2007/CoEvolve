@@ -1,0 +1,17 @@
+rules:
+  - id: java.http.security.ssrf
+    message: >
+      User-controlled URL used in server-side HTTP request. Validate
+      and restrict target URLs to prevent SSRF.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: new URL($URL).openConnection()
+          - pattern: new URL($URL).openStream()
+          - pattern: $CLIENT.execute(new HttpGet($URL))
+          - pattern: $BUILDER.uri(URI.create($URL))

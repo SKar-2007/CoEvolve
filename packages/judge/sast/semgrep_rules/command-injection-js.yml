@@ -1,0 +1,18 @@
+rules:
+  - id: javascript.express.security.command-injection
+    message: >
+      User input passed to shell command. Use execFile or spawn with
+      args array instead of shell execution.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: exec($INPUT)
+          - pattern: execSync($INPUT)
+          - pattern: execFileSync($INPUT, ...)
+          - pattern: spawn($SHELL, ...)
+          - pattern: child_process.exec($INPUT)

@@ -1,0 +1,18 @@
+rules:
+  - id: python.xml.security.xxe
+    message: >
+      XML parser configured without disabling external entities. Set
+      resolve_entities=False or use defusedxml to prevent XXE attacks.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-611"]
+      owasp: ["A05:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: xml.etree.ElementTree.parse($INPUT)
+          - pattern: xml.dom.minidom.parse($INPUT)
+          - pattern: lxml.etree.parse($INPUT)
+          - pattern: xml.sax.parse($INPUT)
+      - pattern-not: defusedxml.ElementTree.parse($INPUT)

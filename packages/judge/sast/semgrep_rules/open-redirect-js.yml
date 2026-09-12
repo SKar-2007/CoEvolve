@@ -1,0 +1,16 @@
+rules:
+  - id: javascript.express.security.open-redirect
+    message: >
+      Redirect to user-controlled URL without validation. Whitelist
+      allowed redirect targets.
+    languages: [javascript, typescript]
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-601"]
+      owasp: ["A01:2021"]
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: res.redirect($URL)
+          - pattern: res.redirect(req.query.$KEY)
+          - pattern: res.redirect(req.params.$KEY)

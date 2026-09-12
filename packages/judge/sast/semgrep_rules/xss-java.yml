@@ -1,0 +1,16 @@
+rules:
+  - id: java.servlet.security.xss
+    message: >
+      User input reflected in HTML response without escaping. Use
+      contextual output encoding or a template engine with auto-escaping.
+    languages: [java]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-79"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: out.println($INPUT)
+          - pattern: $RESPONSE.getWriter().print($INPUT)
+          - pattern: $OUT.write($INPUT)

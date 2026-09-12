@@ -1,0 +1,16 @@
+rules:
+  - id: javascript.xml.security.xxe
+    message: >
+      XML parser configured without disabling external entities. Use
+      defusedxml or set entity expansion limits to prevent XXE.
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-611"]
+      owasp: ["A05:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: DOMParser().parseFromString($INPUT, ...)
+          - pattern: libxmljs.parseXml($INPUT)
+          - pattern: $XMLParser.parse($INPUT)
