@@ -1,0 +1,34 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "agent": "attacker",
+      "action": "generate_task",
+      "timestamp": "2026-09-12T00:00:01Z",
+      "duration_ms": 1500
+    },
+    {
+      "step": 2,
+      "agent": "developer",
+      "action": "generate_patch",
+      "timestamp": "2026-09-12T00:00:05Z",
+      "duration_ms": 3500
+    },
+    {
+      "step": 3,
+      "agent": "judge",
+      "action": "evaluate",
+      "timestamp": "2026-09-12T00:00:10Z",
+      "duration_ms": 2000,
+      "result": {
+        "score": 1,
+        "vulnerability_fixed": true
+      }
+    }
+  ],
+  "elo_changes": {
+    "attacker": -5,
+    "developer": 5
+  },
+  "total_duration_ms": 7000
+}

@@ -1,0 +1,46 @@
+# Agent Configuration
+
+attacker:
+  model: "gpt-4"
+  temperature: 0.8
+  max_tokens: 2048
+  retry_attempts: 3
+  timeout: 60
+
+developer:
+  model: "gpt-4"
+  temperature: 0.3
+  max_tokens: 4096
+  retry_attempts: 3
+  timeout: 120
+
+distiller:
+  model: "gpt-4"
+  temperature: 0.2
+  max_tokens: 1024
+  retry_attempts: 2
+  timeout: 30
+
+judge:
+  model: "gpt-4"
+  temperature: 0.1
+  max_tokens: 1024
+  retry_attempts: 2
+  timeout: 30
+
+vulnerability_classes:
+  - "SQLi"
+  - "PathTraversal"
+  - "CommandInjection"
+  - "XSS"
+  - "SSRF"
+  - "Deserialization"
+  - "SSTI"
+  - "XXE"
+  - "OpenRedirect"
+  - "PrototypePollution"
+
+difficulty_tiers:
+  min: 1
+  max: 10
+  initial: 3

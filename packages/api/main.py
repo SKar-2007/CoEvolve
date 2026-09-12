@@ -7,6 +7,7 @@ import concurrent.futures
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -107,7 +108,7 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
-    status: str | None = Query(None),
+    status: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -155,7 +156,7 @@ def elo_history(db: Session = Depends(get_db)) -> EloHistoryResponse:
 # ---------------------------------------------------------------------------
 @app.get("/rules", response_model=list[RuleRead])
 def list_rules(
-    vuln_class: str | None = Query(None),
+    vuln_class: Optional[str] = Query(None),
     approved_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),

@@ -1,0 +1,11 @@
+{
+  "id": "sqli-001",
+  "name": "SQL Injection Prevention",
+  "vulnerability_class": "SQLi",
+  "severity": "critical",
+  "created_at": "2026-09-12",
+  "source": "distiller-agent",
+  "tags": ["database", "injection", "input-validation"],
+  "cwe": "CWE-89",
+  "owasp": "A03:2021-Injection"
+}

@@ -1,0 +1,17 @@
+{
+  "last_updated": "2026-09-12",
+  "total_classes": 10,
+  "overall": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rule_coverage": 0.3,
+    "test_coverage": 0.0
+  },
+  "totals": {
+    "episodes_completed": 0,
+    "vulnerabilities_detected": 0,
+    "vulnerabilities_mitigated": 0,
+    "rules_distilled": 3,
+    "test_cases_generated": 0
+  }
+}

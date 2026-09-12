@@ -1,0 +1,12 @@
+{
+  "reason": "completed",
+  "code": "SUCCESS",
+  "message": "Episode completed successfully",
+  "timestamp": "2026-09-12T00:00:10Z",
+  "details": {
+    "steps_completed": 3,
+    "max_steps_reached": false,
+    "timeout_reached": false,
+    "error_occurred": false
+  }
+}

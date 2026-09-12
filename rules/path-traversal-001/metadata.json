@@ -1,0 +1,11 @@
+{
+  "id": "path-traversal-001",
+  "name": "Path Traversal Prevention",
+  "vulnerability_class": "PathTraversal",
+  "severity": "high",
+  "created_at": "2026-09-12",
+  "source": "distiller-agent",
+  "tags": ["filesystem", "path-traversal", "input-validation"],
+  "cwe": "CWE-22",
+  "owasp": "A01:2021-Broken Access Control"
+}

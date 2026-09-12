@@ -1,0 +1,36 @@
+# Training Loop Configuration
+
+training:
+  max_episodes: 10000
+  batch_size: 10
+  checkpoint_interval: 100
+  
+elo:
+  initial_rating: 1200
+  k_factor: 32
+  floor: 400
+  ceiling: 2800
+
+prompt_store:
+  path: ".prompt_store"
+  auto_commit: true
+  branch_strategy: "feature"  # feature, main, rollback
+
+sandbox:
+  enabled: true
+  max_containers: 5
+  timeout: 300
+  image: "coevolve-sandbox:latest"
+
+metrics:
+  enabled: true
+  endpoint: "/metrics"
+  histogram_buckets: [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+
+alerting:
+  enabled: true
+  channels:
+    - type: "log"
+    - type: "slack"
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      channel: "#coevolve-alerts"

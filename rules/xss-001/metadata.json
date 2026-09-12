@@ -1,0 +1,11 @@
+{
+  "id": "xss-001",
+  "name": "Cross-Site Scripting Prevention",
+  "vulnerability_class": "XSS",
+  "severity": "high",
+  "created_at": "2026-09-12",
+  "source": "distiller-agent",
+  "tags": ["web", "xss", "output-encoding"],
+  "cwe": "CWE-79",
+  "owasp": "A03:2021-Injection"
+}

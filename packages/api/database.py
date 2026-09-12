@@ -37,12 +37,15 @@ def get_engine():
         raw = get_settings().database_url
         url = _build_url(raw)
         logger.info("Connecting to database: %s...", url[:60])
+        connect_args = {}
+        if not url.startswith("sqlite"):
+            connect_args["connect_timeout"] = 10
         _engine = create_engine(
             url,
             pool_pre_ping=True,
             pool_size=1,
             max_overflow=2,
-            connect_args={"connect_timeout": 10},
+            connect_args=connect_args,
         )
     return _engine
 

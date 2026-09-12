@@ -1,0 +1,43 @@
+# Telemetry Configuration
+
+prometheus:
+  scrape_interval: "15s"
+  evaluation_interval: "15s"
+  retention: "30d"
+
+grafana:
+  enabled: true
+  dashboard_path: "/var/lib/grafana/dashboards"
+  datasource:
+    name: "Prometheus"
+    url: "http://prometheus:9090"
+
+metrics:
+  episodes:
+    total: "coevolve_episodes_total"
+    duration: "coevolve_episode_duration_seconds"
+  vulnerabilities:
+    detected: "coevolve_vulnerabilities_detected_total"
+  elo:
+    attacker: "coevolve_attacker_elo"
+    developer: "coevolve_developer_elo"
+  llm:
+    latency: "coevolve_llm_latency_seconds"
+  sandbox:
+    containers: "coevolve_docker_containers_running"
+
+alerting:
+  alertmanager:
+    url: "http://alertmanager:9093"
+  rules_path: "prometheus/rules"
+  channels:
+    slack:
+      enabled: false
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+    email:
+      enabled: false
+      smtp_host: "${SMTP_HOST}"
+      smtp_port: 587
+    pagerduty:
+      enabled: false
+      routing_key: "${PAGERDUTY_ROUTING_KEY}"
