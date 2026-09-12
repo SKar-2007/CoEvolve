@@ -1,0 +1,16 @@
+rules:
+  - id: python.django.security.xss
+    message: >
+      Potentially unsafe output of user-controlled content with mark_safe /
+      render_template_string. Escape or sanitize before rendering.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-79"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: mark_safe($INPUT)
+          - pattern: render_template_string($INPUT)
+          - pattern: Template($INPUT).render()

@@ -1,0 +1,16 @@
+rules:
+  - id: python.jinja2.security.template-injection
+    message: >
+      Server-side template injection risk: user input is compiled as a
+      template. Never render user-controlled template strings.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-1336"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: jinja2.Template($INPUT)
+          - pattern: Template($INPUT)
+          - pattern: $ENV.from_string($INPUT)

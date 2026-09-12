@@ -1,0 +1,18 @@
+rules:
+  - id: python.lang.security.audit.path-traversal
+    message: >
+      User-controlled data is concatenated into a file path. Normalize with
+      os.path.abspath and validate the resolved path stays inside the
+      allowed base directory.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: open($BASE + $INPUT)
+          - pattern: open(f"{$BASE}{$INPUT}")
+          - pattern: Path($BASE + $INPUT)
+          - pattern: read_file($BASE + $INPUT)

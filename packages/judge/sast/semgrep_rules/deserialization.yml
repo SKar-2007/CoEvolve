@@ -1,0 +1,16 @@
+rules:
+  - id: python.pickle.security.deserialization
+    message: >
+      Deserialization of untrusted data detected. Restrict to trusted
+      sources or use a safe format (JSON) with schemas.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: pickle.loads($INPUT)
+          - pattern: yaml.load($INPUT)
+          - pattern: yaml.unsafe_load($INPUT)

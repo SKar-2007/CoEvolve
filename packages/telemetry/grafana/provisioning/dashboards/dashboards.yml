@@ -1,0 +1,13 @@
+# Grafana dashboard provisioning: auto-load dashboards from /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: "CoEvolve Sandbox"
+    orgId: 1
+    folder: "CoEvolve"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy pytest pytest-asyncio pytest-cov
+          pip install -e "packages/api" -e "packages/agents" -e "packages/judge"
+
+      - name: Lint
+        run: ruff check packages tests
+
+      - name: Type check
+        run: mypy packages --ignore-missing-imports
+
+      - name: Tests
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/coevolve
+        run: pytest tests -v --cov=packages --cov-report=term-missing

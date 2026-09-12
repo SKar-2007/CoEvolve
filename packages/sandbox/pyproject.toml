@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coevolve-sandbox"
+version = "0.1.0"
+description = "Hardened Docker container orchestration for CoEvolve Sandbox"
+requires-python = ">=3.11"
+dependencies = [
+    "docker>=7.0",
+    "pydantic>=2.7",
+]
+
+[tool.setuptools]
+packages = ["sandbox", "sandbox.docker"]

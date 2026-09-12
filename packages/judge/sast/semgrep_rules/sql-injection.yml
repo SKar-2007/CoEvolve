@@ -1,0 +1,18 @@
+rules:
+  - id: python.django.security.sql-injection
+    message: >
+      Unparameterized SQL query detected. Use parameterized queries via
+      ORM bindings (Django filter()/extra() params) instead of string
+      interpolation of user input.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $DB.execute("..." + $INPUT)
+          - pattern: $DB.execute(f"...{$INPUT}...")
+          - pattern: cursor.execute("..." + $USER)
+      - pattern-not: $DB.execute("... %s ...", $INPUT)

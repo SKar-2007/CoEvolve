@@ -1,0 +1,16 @@
+rules:
+  - id: python.subprocess.security.shell-injection
+    message: >
+      User input may reach a shell. Avoid shell=True; pass arguments as a
+      list. Never interpolate raw user input into shell commands.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021"]
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: os.system($INPUT)
+          - pattern: subprocess.$FUNC($INPUT, shell=True)
+          - pattern: exec($INPUT)
