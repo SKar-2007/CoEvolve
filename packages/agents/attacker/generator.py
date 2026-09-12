@@ -93,6 +93,65 @@ RESPONSE FORMAT - return ONLY a JSON object:
 """
 
 
+def _robust_json_load(text: str) -> dict:
+    """Parse JSON with multiple fallback repair strategies."""
+    import ast
+
+    # 1. Direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Fix unescaped newlines inside string values
+    def _escape_newlines_in_strings(s: str) -> str:
+        result = []
+        in_string = False
+        escape_next = False
+        for ch in s:
+            if escape_next:
+                result.append(ch)
+                escape_next = False
+                continue
+            if ch == '\\':
+                result.append(ch)
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                result.append(ch)
+                continue
+            if in_string and ch == '\n':
+                result.append('\\n')
+                continue
+            result.append(ch)
+        return ''.join(result)
+
+    fixed = _escape_newlines_in_strings(text)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Fix single quotes + trailing commas
+    fixed = text.replace("'", '"')
+    fixed = re.sub(r",\s*}", "}", fixed)
+    fixed = re.sub(r",\s*]", "]", fixed)
+    fixed = _escape_newlines_in_strings(fixed)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # 4. ast.literal_eval (handles Python dicts)
+    try:
+        return ast.literal_eval(text)
+    except Exception:
+        pass
+
+    raise ValueError(f"Cannot parse LLM output as JSON: {text[:200]}")
+
+
 class ContextFile(BaseModel):
     path: str
     snippet: str
@@ -195,19 +254,8 @@ class AttackerAgent:
         if not match:
             raise ValueError("LLM did not return a JSON task object")
         raw_json = match.group(0)
-        try:
-            data = json.loads(raw_json)
-        except json.JSONDecodeError:
-            # Try fixing common issues: single quotes, trailing commas
-            import ast
-            try:
-                data = ast.literal_eval(raw_json)
-            except Exception:
-                # Last resort: fix single quotes to double quotes
-                fixed = raw_json.replace("'", '"')
-                fixed = re.sub(r",\s*}", "}", fixed)
-                fixed = re.sub(r",\s*]", "]", fixed)
-                data = json.loads(fixed)
+
+        data = _robust_json_load(raw_json)
 
         # Normalize context_files: accept both string paths and dict {path, snippet}
         raw_files = data.get("context_files", [])
