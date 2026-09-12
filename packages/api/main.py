@@ -5,10 +5,16 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from .auth import (
+    APIKey,
+    get_key_store,
+    require_api_key,
+)
 from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
@@ -43,6 +49,55 @@ app = FastAPI(
     description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to all requests."""
+    # Skip rate limiting for docs and static files
+    if request.url.path in ("/docs", "/redoc", "/openapi.json") or request.url.path.startswith(
+        "/static"
+    ):
+        return await call_next(request)
+
+    # Check rate limit
+    from .auth import get_rate_limiter
+
+    key_store = get_key_store()
+    limiter = get_rate_limiter()
+
+    # Extract API key if present
+    api_key_header = request.headers.get("X-API-Key")
+    api_key = key_store.validate(api_key_header) if api_key_header else None
+
+    if api_key:
+        identifier = f"key:{api_key.key_hash}"
+        tier = api_key.tier
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+        identifier = f"ip:{client_ip}"
+        tier = "public"
+
+    allowed, info = limiter.is_allowed(identifier, tier)
+
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={
+                "X-RateLimit-Limit": str(info["limit"]),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(info["reset"]),
+                "Retry-After": str(info["retry_after"]),
+            },
+        )
+
+    response = await call_next(request)
+    response.headers["X-RateLimit-Limit"] = str(info["limit"])
+    response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
+    response.headers["X-RateLimit-Reset"] = str(info["reset"])
+    return response
+
 
 from pathlib import Path
 
@@ -460,3 +515,62 @@ def get_training_job(job_id: str) -> TrainingJobRead:
         result=job.result if job.result else None,
         error=job.error or None,
     )
+
+
+# ---------------------------------------------------------------------------
+# API Key Management
+# ---------------------------------------------------------------------------
+@app.post("/auth/keys")
+def create_api_key(
+    name: str = "default",
+    tier: str = "standard",
+    api_key: APIKey | None = Depends(require_api_key),
+):
+    """Create a new API key (admin only)."""
+    if api_key and api_key.tier != "admin":
+        raise HTTPException(403, "Admin access required")
+    store = get_key_store()
+    new_key = store.create_key(name=name, tier=tier)
+    return {
+        "key": new_key.key,
+        "name": new_key.name,
+        "tier": new_key.tier,
+        "created_at": new_key.created_at,
+    }
+
+
+@app.get("/auth/keys")
+def list_api_keys(api_key: APIKey | None = Depends(require_api_key)):
+    """List all API keys (admin only)."""
+    if api_key and api_key.tier != "admin":
+        raise HTTPException(403, "Admin access required")
+    store = get_key_store()
+    keys = store.list_keys()
+    return [
+        {
+            "key_hash": k.key_hash,
+            "name": k.name,
+            "tier": k.tier,
+            "created_at": k.created_at,
+            "last_used": k.last_used,
+            "disabled": k.disabled,
+        }
+        for k in keys
+    ]
+
+
+@app.delete("/auth/keys/{key_hash}")
+def disable_api_key(
+    key_hash: str,
+    api_key: APIKey | None = Depends(require_api_key),
+):
+    """Disable an API key (admin only)."""
+    if api_key and api_key.tier != "admin":
+        raise HTTPException(403, "Admin access required")
+    store = get_key_store()
+    # Find key by hash
+    for k in store.list_keys():
+        if k.key_hash == key_hash:
+            store.disable(k.key)
+            return {"disabled": True, "key_hash": key_hash}
+    raise HTTPException(404, "Key not found")

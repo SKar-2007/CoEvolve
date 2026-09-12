@@ -33,6 +33,10 @@ def setup_db():
     """Create tables before each test, drop after."""
     engine = get_engine()
     Base.metadata.create_all(engine)
+    # Reset rate limiter between tests
+    from packages.api.auth import get_rate_limiter
+
+    get_rate_limiter()._windows.clear()
     yield
     Base.metadata.drop_all(engine)
 
