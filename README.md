@@ -1,6 +1,7 @@
 # CoEvolve Sandbox
 
 [![CI](https://github.com/SKar-2007/CoEvolve/actions/workflows/ci.yml/badge.svg)](https://github.com/SKar-2007/CoEvolve/actions/workflows/ci.yml)
+[![Security](https://github.com/SKar-2007/CoEvolve/actions/workflows/security.yml/badge.svg)](https://github.com/SKar-2007/CoEvolve/actions/workflows/security.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -57,6 +58,26 @@ automatically matches task difficulty to developer capability.
 | **Elo Rating** | Zero-sum adaptive difficulty matching (10 tiers, 1000-2500 range) |
 | **Batch Training** | Multi-episode sessions with convergence detection and per-class win rates |
 
+### SAST Rules (29 rules, 3 languages)
+
+| Language | Rules | Vulnerability Classes |
+|----------|-------|----------------------|
+| **Python** | 10 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect, PrototypePollution |
+| **JavaScript** | 10 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect, PrototypePollution |
+| **Java** | 9 | SQLi, CmdInj, XSS, SSRF, SSTI, Deserialization, PathTraversal, XXE, OpenRedirect |
+
+### DAST Targets (7 vulnerable apps)
+
+| App | Vulnerability | Exploit Verified |
+|-----|--------------|-----------------|
+| **SQLi** | SQLite injection via string interpolation | `' OR '1'='1' --` |
+| **PathTraversal** | Directory escape to read files | `../../../../etc/passwd` |
+| **CommandInjection** | Shell command injection | `; cat /etc/passwd` |
+| **XSS** | Reflected cross-site scripting | `<script>alert(1)</script>` |
+| **SSTI** | Jinja2 template injection | `{{7*7}}` |
+| **SSRF** | Server-side request forgery | `http://127.0.0.1:PORT/internal/metadata` |
+| **OpenRedirect** | Unvalidated redirect | `//evil.com/phish` |
+
 ### Prompt Evolution
 
 | Component | Description |
@@ -65,12 +86,13 @@ automatically matches task difficulty to developer capability.
 | **Branch Support** | Create, switch, and merge parallel evolution branches |
 | **Rollback** | Restore any previous prompt version |
 | **Semantic Deduplication** | sentence-transformers cosine similarity with Jaccard fallback |
+| **Rule Portability** | Export/import rules as portable JSON packages |
 
 ### Infrastructure
 
 | Component | Description |
 |-----------|-------------|
-| **FastAPI API** | 16 REST endpoints for episodes, prompts, rules, Elo, training, jobs |
+| **FastAPI API** | 19 REST endpoints for episodes, prompts, rules, Elo, training, jobs, export/import |
 | **Redis Task Queue** | Async training jobs with in-memory fallback |
 | **Job Worker** | Background worker that processes async training jobs |
 | **Docker Sandbox** | 7-layer container isolation with seccomp profiles |
@@ -78,6 +100,7 @@ automatically matches task difficulty to developer capability.
 | **Alerting** | Slack, Email (SMTP), PagerDuty notification channels |
 | **Cost Tracking** | Per-call token counting with provider-specific pricing |
 | **LLM Caching** | LRU cache for deterministic calls (temperature=0) |
+| **Dashboard** | Real-time metrics dashboard (Elo trends, win rates, rule growth) |
 
 ### LLM Support
 
@@ -86,6 +109,7 @@ automatically matches task difficulty to developer capability.
 | **OpenRouter** | DeepSeek, Claude, GPT-4o, any model | `OPENROUTER_API_KEY` |
 | **Anthropic** | Claude Sonnet 4.5, Haiku 4.5 | `ANTHROPIC_API_KEY` |
 | **OpenAI** | GPT-4o, GPT-4o-mini | `OPENAI_API_KEY` |
+| **Google Gemini** | Gemini 2.5 Flash, Gemini 2.5 Pro | `GEMINI_API_KEY` |
 
 ## Quick Start
 
@@ -129,7 +153,7 @@ make worker
 # Mock mode (no API key needed)
 make demo
 
-# Real LLM calls (requires OPENROUTER_API_KEY in .env)
+# Real LLM calls (requires API key in .env)
 make demo-real
 ```
 
@@ -163,6 +187,10 @@ make test
 | `make benchmark` | Run 100-episode benchmark |
 | `make train` | Run 100-episode batch training |
 | `make stress` | Run 1000-episode stress test |
+| `make dast` | Run DAST exploit verification against 7 vulnerable apps |
+| `make dashboard` | Start API + metrics dashboard at localhost:8000/dashboard |
+| `make rules-export` | Export trained rules to rules.json |
+| `make rules-import` | Import rules from rules.json |
 | `make clean` | Remove caches and temp files |
 
 ## API Endpoints
@@ -171,6 +199,7 @@ make test
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/metrics` | Episode/elo/rules metrics |
+| GET | `/dashboard` | Metrics dashboard (HTML) |
 | POST | `/episodes` | Create episode |
 | GET | `/episodes` | List episodes |
 | GET | `/episodes/{id}` | Get episode |
@@ -182,6 +211,8 @@ make test
 | GET | `/prompts/diff/{v1}/{v2}` | Diff between versions |
 | GET | `/rules` | List security rules |
 | GET | `/rules/{id}` | Get specific rule |
+| POST | `/rules/export` | Export rules as JSON package |
+| POST | `/rules/import` | Import rules from JSON package |
 | POST | `/training/run` | Run training episode (sync) |
 | POST | `/training/async` | Enqueue training episode (async) |
 | GET | `/training/jobs` | List training jobs |
@@ -208,9 +239,17 @@ resp = httpx.post("http://localhost:8000/training/async", json={
 job = resp.json()
 print(f"Job {job['job_id']} enqueued")
 
-# Check job status
-resp = httpx.get(f"http://localhost:8000/training/jobs/{job['job_id']}")
-print(resp.json())
+# Export rules as portable JSON
+resp = httpx.post("http://localhost:8000/rules/export", json={
+    "name": "my-rules",
+    "version": "1.0.0",
+})
+package = resp.json()
+print(f"Exported {package['rules_count']} rules")
+
+# Import rules from another instance
+resp = httpx.post("http://localhost:8000/rules/import", json=package)
+print(f"Imported {resp.json()['imported']} new rules")
 ```
 
 ### Programmatic Usage
@@ -219,8 +258,10 @@ print(resp.json())
 from packages.agents.llm import build_client
 from packages.agents.training_loop import TrainingLoop, EpisodeConfig
 
-# Initialize with OpenRouter
+# Initialize with any provider
 llm = build_client("openrouter", "deepseek/deepseek-chat-v3-0324")
+# llm = build_client("gemini", "gemini-2.5-flash")
+# llm = build_client("anthropic", "claude-sonnet-4-5")
 
 # Run a single episode
 loop = TrainingLoop(llm=llm)
@@ -234,6 +275,14 @@ from packages.agents.batch_trainer import TrainingSession
 session = TrainingSession(llm=llm, episodes=100)
 report = session.run()
 print(f"Secure rate: {report.secure_rate:.1%}")
+
+# Export trained rules
+from packages.evolution.portability import export_rules, save_package
+from packages.evolution.store import PromptStore
+
+store = PromptStore()
+pkg = export_rules(store, name="trained-rules", version="2.0.0")
+save_package(pkg, Path("rules.json"))
 ```
 
 ## Configuration
@@ -245,6 +294,7 @@ print(f"Secure rate: {report.secure_rate:.1%}")
 | `OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `OPENAI_API_KEY` | — | OpenAI API key |
+| `GEMINI_API_KEY` | — | Google Gemini API key |
 | `DATABASE_URL` | `postgresql://...` | PostgreSQL connection |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection |
 | `JWT_SECRET` | `change-me` | JWT signing secret |
@@ -253,22 +303,51 @@ print(f"Secure rate: {report.secure_rate:.1%}")
 ## Testing
 
 ```
-127 tests passing (6 Docker tests require daemon)
-├── tests/unit/           # 44 unit tests
+137 tests passing (6 Docker tests require daemon)
+├── tests/unit/           # 54 unit tests
 │   ├── test_elo.py              # Elo calculator + difficulty tiers
 │   ├── test_judge.py            # Judge verdict + DAST
 │   ├── test_history.py          # Rating history tracker
 │   ├── test_dedupe.py           # Semantic deduplication
 │   ├── test_regression_guard.py # Regression detection
-│   └── test_telemetry.py        # Prometheus metrics
+│   ├── test_telemetry.py        # Prometheus metrics
+│   └── test_portability.py      # Rule export/import (10 tests)
 ├── tests/integration/    # 83 integration tests
 │   ├── test_agents_pipeline.py     # Full attacker→developer→judge pipeline
-│   ├── test_api_crud.py            # All 16 API endpoints
+│   ├── test_api_crud.py            # All 19 API endpoints
 │   ├── test_evolution.py           # Prompt store versioning
 │   ├── test_sandbox.py             # Sandbox config + validation
 │   └── test_sandbox_lifecycle.py   # Container lifecycle (29 tests)
 └── Makefile targets: test, lint, typecheck
 ```
+
+## CI/CD Workflows
+
+### CI Pipeline (`.github/workflows/ci.yml`)
+
+Runs on every push and PR to `main`:
+
+1. **Lint** — `ruff check` (0 errors)
+2. **Format** — `ruff format --check` (all files formatted)
+3. **Typecheck** — `mypy` (strict mode)
+4. **Unit Tests** — `pytest tests/unit/` with coverage
+5. **Integration Tests** — `pytest tests/integration/` (API, evolution, sandbox)
+6. **Coverage Report** — Upload to Codecov
+
+### Security Scanning (`.github/workflows/security.yml`)
+
+Runs weekly and on push:
+
+1. **Secret Detection** — `detect-secrets` baseline scan
+2. **Dependency Audit** — `pip-audit` for known vulnerabilities
+3. **Container Scanning** — Trivy vulnerability scanner on Docker images
+
+### Dependabot (`.github/dependabot.yml`)
+
+Automated dependency updates:
+- **pip** — Weekly Python dependency updates
+- **Docker** — Weekly Dockerfile base image updates
+- **GitHub Actions** — Weekly action version updates
 
 ## Benchmarking
 
@@ -286,6 +365,10 @@ python scripts/benchmark.py --episodes 20 --real --react
 # Batch training with convergence detection
 make train              # 100 episodes
 python scripts/train.py --episodes 200 --real --react --output report.json
+
+# DAST exploit verification
+make dast               # Test all 7 vulnerable apps
+python -m packages.judge.dast.runner --classes SQLi SSTI  # Test specific
 ```
 
 ### Stress Test Results
@@ -312,13 +395,16 @@ make docker-prod
 
 # 4. Verify
 curl http://localhost:8000/health
+
+# 5. Open dashboard
+open http://localhost:8000/dashboard
 ```
 
 See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, troubleshooting).
 
 | Service | Port | Description |
 |---------|------|-------------|
-| API | 8000 | FastAPI REST API |
+| API | 8000 | FastAPI REST API + Dashboard |
 | Worker | — | Background training job processor |
 | PostgreSQL | 5432 | Episode/rule database |
 | Redis | 6379 | Task queue |
@@ -329,19 +415,20 @@ See [DEPLOY.md](DEPLOY.md) for full deployment guide (SSL, backups, scaling, tro
 
 ```
 packages/
-├── api/                # FastAPI REST API (16 endpoints)
+├── api/                # FastAPI REST API (19 endpoints)
 │   ├── main.py             # All API routes
 │   ├── models.py           # SQLAlchemy ORM models
 │   ├── schemas.py          # Pydantic request/response schemas
 │   ├── config.py           # pydantic-settings configuration
 │   ├── database.py         # Engine, session, base classes
 │   ├── task_queue.py       # Redis-backed async job queue
-│   └── worker.py           # Background job worker
+│   ├── worker.py           # Background job worker
+│   └── static/dashboard.html  # Metrics dashboard
 ├── agents/             # LLM agent implementations
 │   ├── training_loop.py    # Co-evolutionary orchestrator
 │   ├── batch_trainer.py    # Multi-episode training with convergence
 │   ├── cost_tracking.py    # Token/cost tracking + LLM caching
-│   ├── llm.py              # Unified LLM client (Anthropic, OpenAI, OpenRouter)
+│   ├── llm.py              # Unified LLM client (Anthropic, OpenAI, OpenRouter, Gemini)
 │   ├── attacker/           # Adversarial task generator
 │   │   ├── generator.py        # Task generation with difficulty scaling
 │   │   └── prompts.py          # System prompts
@@ -354,33 +441,36 @@ packages/
 │       └── guard.py            # Retroactive rule validation
 ├── judge/              # Hybrid Judge Engine
 │   ├── engine.py           # Orchestrates SAST + DAST
-│   ├── sast/               # Semgrep scanner + 7 rule packs
-│   └── dast/               # Dynamic exploit executor + payload library
+│   ├── sast/               # Semgrep scanner + 29 rules (Python/JS/Java)
+│   │   └── semgrep_rules/      # 29 YAML rule files
+│   └── dast/               # Dynamic exploit executor + 7 vulnerable apps
+│       ├── executor.py         # Payload library + exploit runner
+│       ├── runner.py           # DAST verification runner
+│       └── targets/            # 7 vulnerable Flask apps
 ├── elo/                # Elo rating system
 │   ├── calculator.py       # Zero-sum Elo engine
 │   ├── difficulty.py       # 10-tier difficulty mapper
 │   └── history.py          # Rating history tracker
 ├── evolution/          # Prompt-Evolution Engine
 │   ├── store.py            # Git-backed versioned prompt store
-│   └── dedupe.py           # Semantic deduplication (sentence-transformers)
+│   ├── dedupe.py           # Semantic deduplication (sentence-transformers)
+│   └── portability.py      # Rule export/import (JSON packages)
 ├── sandbox/            # Docker container orchestration
 │   ├── manager.py          # Container lifecycle (create/exec/destroy)
 │   ├── lifecycle.py        # Episode orchestrator
 │   ├── config.py           # Sandbox configuration + seccomp
 │   └── docker/             # Dockerfiles + seccomp profiles
-│       ├── Dockerfile          # Base sandbox image
-│       ├── hardened.Dockerfile # Hardened production image
-│       ├── entrypoint.sh       # Container entrypoint
-│       └── seccomp-profile.json # Syscall filter profile
 └── telemetry/          # Monitoring and alerting
     ├── exporters/metrics.py    # Prometheus counters/gauges/histograms
     └── alerting.py             # Slack/Email/PagerDuty notifications
 data/                   # Vulnerability taxonomy + exploit payloads
-tests/                  # 127 tests (unit + integration)
+tests/                  # 137 tests (unit + integration)
 scripts/
 ├── demo.py                 # End-to-end demo (mock + real)
 ├── benchmark.py            # Episode benchmarking
 ├── train.py                # Batch training with convergence
+├── rules_export.py         # Export rules as JSON package
+├── rules_import.py         # Import rules from JSON package
 ├── setup.sh                # Dev environment setup
 └── test.sh                 # Quick test runner
 docker/
@@ -396,7 +486,7 @@ requirements-ci.txt         # CI-specific dependencies
 requirements-dev.txt        # Dev tools (ruff, mypy, pytest)
 conftest.py                 # Root pytest config (sys.path setup)
 pyproject.toml              # Ruff, mypy, pytest, coverage config
-Makefile                    # Build, test, deploy targets
+Makefile                    # Build, test, deploy targets (25 targets)
 DEPLOY.md                   # Full deployment guide
 CONTRIBUTING.md             # Contribution guidelines
 CHANGELOG.md                # Version history
