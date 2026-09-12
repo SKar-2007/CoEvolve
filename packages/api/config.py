@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # LLM — Groq free tier (console.groq.com)
     llm_provider: str = "groq"
-    llm_model: str = "qwen/qwen3.6-27b"
+    llm_model: str = "openai/gpt-oss-120b"
     groq_api_key: str = ""
 
     # Optional fallback providers
