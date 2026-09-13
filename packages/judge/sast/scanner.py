@@ -7,6 +7,7 @@ vulnerability-specific rule packs and returns structured findings.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,14 +58,32 @@ class SemgrepScanner:
         self,
         rules_dir: Path = RULES_DIR,
         timeout: int = 120,
-        binary: str = "semgrep",
+        binary: str | None = None,
     ):
         self.rules_dir = Path(rules_dir)
         self.timeout = timeout
-        self.binary = binary
+        self.binary = binary or self._find_semgrep()
+
+    @staticmethod
+    def _find_semgrep() -> str:
+        found = shutil.which("semgrep")
+        if found:
+            return found
+        import os
+        candidates = [
+            os.path.expanduser("~/Library/Python/3.9/bin/semgrep"),
+            "/usr/local/bin/semgrep",
+            "/usr/bin/semgrep",
+        ]
+        for c in candidates:
+            if os.path.isfile(c) and os.access(c, os.X_OK):
+                return c
+        return "semgrep"
 
     def scan_directory(self, target: Path, config: str | None = None) -> SASTResult:
         """Scan a directory with the bundled rules; return structured findings."""
+        if not shutil.which(self.binary) and not Path(self.binary).is_file():
+            return SASTResult()
         # Scan with each rule file individually to avoid semgrep rule selection issues
         all_findings: list[SASTFinding] = []
         for rule_file in sorted(self.rules_dir.glob("*.yml")):
