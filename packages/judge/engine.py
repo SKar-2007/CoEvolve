@@ -74,6 +74,9 @@ class HybridJudge:
         # Stage 1: static analysis on workspace (includes context_files + patch)
         if workspace_dir and workspace_dir.exists():
             sast = self.scanner.scan_directory(workspace_dir)
+            # If semgrep returned nothing (not installed), fall back to keyword scan
+            if not sast.matched:
+                sast = self.scanner.scan_patch(patch_text)
         else:
             sast = self.scanner.scan_patch(patch_text)
 

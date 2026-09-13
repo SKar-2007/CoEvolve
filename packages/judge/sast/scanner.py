@@ -83,7 +83,8 @@ class SemgrepScanner:
     def scan_directory(self, target: Path, config: str | None = None) -> SASTResult:
         """Scan a directory with the bundled rules; return structured findings."""
         if not shutil.which(self.binary) and not Path(self.binary).is_file():
-            return SASTResult()
+            # Semgrep not available — fall back to keyword heuristic on all files
+            return self._scan_directory_heuristic(target)
         # Scan with each rule file individually to avoid semgrep rule selection issues
         all_findings: list[SASTFinding] = []
         for rule_file in sorted(self.rules_dir.glob("*.yml")):
@@ -104,6 +105,31 @@ class SemgrepScanner:
             result = self._parse(proc.stdout)
             all_findings.extend(result.findings)
         return SASTResult(findings=all_findings)
+
+    def _scan_directory_heuristic(self, target: Path) -> SASTResult:
+        """Keyword-based scan of all files in a directory (no semgrep needed)."""
+        findings: list[SASTFinding] = []
+        for code_file in target.rglob("*.py"):
+            try:
+                text = code_file.read_text(errors="ignore").lower()
+            except Exception:
+                continue
+            for rule_file in sorted(self.rules_dir.glob("*.yml")):
+                stem = rule_file.stem
+                if stem.endswith("-java") or stem.endswith("-js"):
+                    continue
+                if self._rule_hits_patch(rule_file, text):
+                    findings.append(
+                        SASTFinding(
+                            rule_id=stem,
+                            file=str(code_file),
+                            line=0,
+                            severity="WARNING",
+                            confidence="MEDIUM",
+                            message="Keyword pattern matched in source file (heuristic scan)",
+                        )
+                    )
+        return SASTResult(findings=findings)
 
     def scan_patch(self, patch_text: str, syntax: str = "python") -> SASTResult:
         """Scan a code patch string directly (best-effort heuristic).
