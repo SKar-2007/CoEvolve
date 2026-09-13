@@ -76,9 +76,10 @@ class HybridJudge:
             sast = self.scanner.scan_directory(workspace_dir)
             # If semgrep returned nothing (not installed), fall back to keyword scan
             if not sast.matched:
-                # Scan both the patch AND all files in workspace
+                # Scan the patch and up to 5 workspace files for keywords
                 sast = self.scanner.scan_patch(patch_text)
-                for code_file in workspace_dir.rglob("*.py"):
+                py_files = list(workspace_dir.rglob("*.py"))[:5]
+                for code_file in py_files:
                     try:
                         content = code_file.read_text(errors="ignore")
                         file_result = self.scanner.scan_patch(content)

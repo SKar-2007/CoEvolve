@@ -109,7 +109,9 @@ class SemgrepScanner:
     def _scan_directory_heuristic(self, target: Path) -> SASTResult:
         """Keyword-based scan of all files in a directory (no semgrep needed)."""
         findings: list[SASTFinding] = []
-        for code_file in target.rglob("*.py"):
+        py_files = list(target.rglob("*.py"))
+        # Limit to 10 files max to avoid timeout on free tier
+        for code_file in py_files[:10]:
             try:
                 text = code_file.read_text(errors="ignore").lower()
             except Exception:
@@ -129,6 +131,7 @@ class SemgrepScanner:
                             message="Keyword pattern matched in source file (heuristic scan)",
                         )
                     )
+                    break  # One finding per file is enough
         return SASTResult(findings=findings)
 
     def scan_patch(self, patch_text: str, syntax: str = "python") -> SASTResult:
