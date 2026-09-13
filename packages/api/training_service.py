@@ -14,7 +14,7 @@ from .config import Settings
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
 
-def resolve_llm_provider(settings: Settings) -> Optional[tuple[str, str], str]:
+def resolve_llm_provider(settings: Settings):
     """Pick best available LLM provider. Returns (provider, api_key, model)."""
     if settings.groq_api_key:
         return "groq", settings.groq_api_key, settings.llm_model
@@ -46,7 +46,7 @@ def _provider_key(settings: Settings, provider: str) -> str:
     }.get(provider, "")
 
 
-def resolve_small_llm_provider(settings: Settings) -> Optional[Optional[tuple[str, Optional[str], str]]]:
+def resolve_small_llm_provider(settings: Settings):
     """Resolve the optional distillation client.
 
     Returns None when SMALL_LLM_MODEL is unset (caller must fall back to the
