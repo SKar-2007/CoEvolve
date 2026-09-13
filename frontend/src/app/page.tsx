@@ -247,12 +247,51 @@ interface Verdict {
   error?: string;
 }
 
+function SeverityDot({ severity }: { severity: string }) {
+  const s = severity.toUpperCase();
+  const color = s === "ERROR" ? "#ff5451" : s === "WARNING" ? "#ffab40" : "#8888a0";
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: color,
+        marginRight: 6,
+        verticalAlign: "middle",
+      }}
+    />
+  );
+}
+
+function shortFile(path: string): string {
+  if (!path) return path;
+  const parts = path.replace(/\\/g, "/").split("/");
+  return parts.length > 3 ? `.../${parts.slice(-3).join("/")}` : path;
+}
+
 function VerdictTable({ verdict }: { verdict: Verdict }) {
   const findings = verdict.sast?.rules_matched ?? [];
   const dast = verdict.dast && Object.keys(verdict.dast).length > 0 ? verdict.dast : null;
+  const totalSast = verdict.sast?.total_matches ?? findings.length;
+  const dastRan = !!dast;
+  const dastOk = dast?.success === false;
+
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+    <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          padding: "10px 14px",
+          background: "var(--surface-2)",
+          borderBottom: "1px solid var(--border)",
+          flexWrap: "wrap",
+        }}
+      >
         {verdict.j === 0 ? (
           <Badge label="SECURE" color="#4caf5030" />
         ) : verdict.j === 1 ? (
@@ -260,91 +299,176 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
         ) : (
           <Badge label="UNKNOWN" color="#8888a030" />
         )}
-        {verdict.trace_id && (
-          <code style={{ fontSize: 11, color: "var(--text-dim)" }}>trace {verdict.trace_id.slice(0, 8)}</code>
+        <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-dim)" }}>
+          <span>
+            <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: totalSast > 0 ? "#ff5451" : "#4caf50", marginRight: 4, verticalAlign: "middle" }} />
+            SAST {totalSast > 0 ? `${totalSast} hits` : "clean"}
+          </span>
+          <span>
+            <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: !dastRan ? "#8888a0" : dastOk ? "#4caf50" : "#ff5451", marginRight: 4, verticalAlign: "middle" }} />
+            DAST {!dastRan ? "skip" : dastOk ? "blocked" : "exploited"}
+          </span>
+          {verdict.trace_id && (
+            <code style={{ fontFamily: "monospace" }}>trace:{verdict.trace_id.slice(0, 8)}</code>
+          )}
+          {verdict.episode_k !== null && verdict.episode_k !== undefined && (
+            <span>k={verdict.episode_k}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Structure / error */}
+      <div style={{ padding: "8px 14px" }}>
+        {verdict.structure && (
+          <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "0 0 6px" }}>{verdict.structure}</p>
         )}
-        {verdict.episode_k !== null && verdict.episode_k !== undefined && (
-          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>episode_k={verdict.episode_k}</span>
+        {verdict.error && (
+          <p style={{ fontSize: 12, color: "var(--accent)", margin: "0 0 6px" }}>Judge error: {verdict.error}</p>
         )}
       </div>
-      {verdict.structure && (
-        <p style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>{verdict.structure}</p>
-      )}
-      {verdict.error && (
-        <p style={{ fontSize: 12, color: "var(--accent)", marginBottom: 8 }}>Judge error: {verdict.error}</p>
-      )}
-      <div style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px" }}>
-        SAST — {verdict.sast?.total_matches ?? findings.length} match(es)
-      </div>
-      {findings.length === 0 ? (
-        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>Clean — no patterns matched.</p>
-      ) : (
-        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", marginBottom: 8 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-dim)" }}>
-              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Rule</th>
-              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Severity</th>
-              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Location</th>
-              <th style={{ padding: "6px 4px", borderBottom: "1px solid var(--border)" }}>Message</th>
-            </tr>
-          </thead>
-          <tbody>
-            {findings.map((f, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid var(--border)", verticalAlign: "top" }}>
-                <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>{f.rule_id}</td>
-                <td style={{ padding: "6px 4px" }}>{f.severity}</td>
-                <td style={{ padding: "6px 4px", fontFamily: "monospace" }}>
-                  {f.file}:{f.line}
-                </td>
-                <td style={{ padding: "6px 4px" }}>{f.message}</td>
+
+      {/* SAST findings table */}
+      {findings.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "8px 14px",
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>SAST Findings</span>
+            <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>{totalSast} match{totalSast !== 1 ? "es" : ""}</span>
+          </div>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface)" }}>
+                <th style={{ padding: "6px 14px", borderBottom: "1px solid var(--border)", width: "25%" }}>Rule</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "12%" }}>Severity</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "28%" }}>Location</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>Message</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <div style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px" }}>DAST replay</div>
-      {!dast ? (
-        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          Not run — SAST was clean or the replay was inconclusive.
-        </p>
-      ) : (
-        <>
-          <Field k="Exploit class" v={<code style={{ fontSize: 12 }}>{dast.exploit_class}</code>} />
-          <Field
-            k="Result"
-            v={
-              dast.success ? (
-                <Badge label="EXPLOITED" color="#ff545130" />
-              ) : (
-                <Badge label="BLOCKED" color="#4caf5030" />
-              )
-            }
-          />
-          {dast.execution_time_ms !== undefined && <Field k="Replay time" v={fmtDur(dast.execution_time_ms / 1000)} />}
-          {dast.payload && (
-            <>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Payload</div>
-              <Pre text={dast.payload} />
-            </>
-          )}
-          {dast.evidence && dast.evidence.length > 0 && (
-            <>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Evidence</div>
-              {dast.evidence.map((e, i) => (
-                <p key={i} style={{ fontSize: 12, marginBottom: 2 }}>
-                  • {e}
-                </p>
+            </thead>
+            <tbody>
+              {findings.map((f, i) => (
+                <tr
+                  key={i}
+                  style={{
+                    borderBottom: "1px solid var(--border)",
+                    verticalAlign: "top",
+                    background: i % 2 === 0 ? "transparent" : "var(--surface)",
+                  }}
+                >
+                  <td style={{ padding: "6px 14px", fontFamily: "monospace", fontSize: 11 }}>
+                    {f.rule_id.split(".").pop()}
+                  </td>
+                  <td style={{ padding: "6px 8px" }}>
+                    <SeverityDot severity={f.severity} />
+                    <span style={{ color: f.severity.toUpperCase() === "ERROR" ? "#ff5451" : "var(--text)" }}>{f.severity}</span>
+                  </td>
+                  <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11 }} title={f.file}>
+                    {shortFile(f.file)}:{f.line}
+                  </td>
+                  <td style={{ padding: "6px 8px", fontSize: 11 }}>{f.message}</td>
+                </tr>
               ))}
-            </>
-          )}
-          {dast.stdout && (
-            <>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0" }}>Stdout</div>
-              <Pre text={dast.stdout} />
-            </>
-          )}
-        </>
+            </tbody>
+          </table>
+        </div>
       )}
+
+      {/* DAST section */}
+      <div style={{ borderTop: "1px solid var(--border)" }}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            padding: "8px 14px",
+            background: "var(--surface)",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>DAST Replay</span>
+          {dast && (
+            <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>
+              {dast.success ? "exploited" : "blocked"}
+              {dast.execution_time_ms ? ` in ${fmtDur(dast.execution_time_ms / 1000)}` : ""}
+            </span>
+          )}
+        </div>
+        {!dast ? (
+          <p style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 14px", margin: 0 }}>
+            Not run — SAST was clean.
+          </p>
+        ) : (
+          <div style={{ padding: "8px 14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px", fontSize: 12, marginBottom: 8 }}>
+              <Field k="Exploit class" v={<code style={{ fontSize: 12 }}>{dast.exploit_class}</code>} />
+              <Field
+                k="Result"
+                v={
+                  dast.success ? (
+                    <Badge label="EXPLOITED" color="#ff545130" />
+                  ) : (
+                    <Badge label="BLOCKED" color="#4caf5030" />
+                  )
+                }
+              />
+              {dast.execution_time_ms !== undefined && (
+                <Field k="Replay time" v={fmtDur(dast.execution_time_ms / 1000)} />
+              )}
+            </div>
+            {dast.payload && (
+              <>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "6px 0 3px", textTransform: "uppercase", letterSpacing: 0.5 }}>Payload</div>
+                <Pre text={dast.payload} />
+              </>
+            )}
+            {dast.evidence && dast.evidence.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "6px 0 3px", textTransform: "uppercase", letterSpacing: 0.5 }}>Evidence</div>
+                <div style={{ fontSize: 12, padding: "4px 8px", background: "var(--surface-2)", borderRadius: 4, border: "1px solid var(--border)" }}>
+                  {dast.evidence.map((e, i) => (
+                    <div key={i} style={{ padding: "2px 0", borderBottom: i < dast.evidence!.length - 1 ? "1px solid var(--border)" : "none" }}>
+                      {e}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {dast.stdout && (
+              <>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "6px 0 3px", textTransform: "uppercase", letterSpacing: 0.5 }}>Stdout</div>
+                <Pre text={dast.stdout} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Summary footer */}
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          padding: "6px 14px",
+          fontSize: 11,
+          color: "var(--text-dim)",
+          display: "flex",
+          gap: 16,
+          background: "var(--surface)",
+        }}
+      >
+        <span>SAST: {totalSast} finding{totalSast !== 1 ? "s" : ""}</span>
+        <span>DAST: {dastRan ? (dastOk ? "blocked" : "exploited") : "not run"}</span>
+        {verdict.j === 1 && <span style={{ color: "#ff5451" }}>Attacker wins</span>}
+        {verdict.j === 0 && <span style={{ color: "#4caf50" }}>Developer wins</span>}
+      </div>
     </div>
   );
 }
