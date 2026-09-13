@@ -26,9 +26,11 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: LLM_PROVIDER
-        value: groq
+        value: modelscope
       - key: LLM_MODEL
-        value: llama-3.3-70b-versatile
+        value: Qwen/Qwen3-8B
+      - key: MODELSCOPE_API_KEY
+        sync: false
       - key: LOG_LEVEL
         value: INFO
       # P0 production security defaults — set the sync:false values in the
