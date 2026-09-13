@@ -1,5 +1,11 @@
-version: "3.8"
-
+# Development compose. NOTE: default credentials below are dev-only placeholders.
+# Set POSTGRES_PASSWORD / GRAFANA_PASSWORD in your shell or .env for anything
+# shared. Production must use docker-compose.prod.yml which validates required
+# secrets with ${VAR:?error} syntax.
+# SECURITY TRADE-OFF: mounting /var/run/docker.sock gives the API container
+# full control of the Docker daemon (container escape vector if API is
+# compromised). This is required for the sandbox feature in dev. For
+# production consider rootless Docker or a remote Docker host with TLS.
 services:
   api:
     build:
@@ -8,13 +14,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/coevolve
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-password}@db:5432/coevolve
       - REDIS_URL=redis://redis:6379
       - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
       - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-5}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -25,7 +32,7 @@ services:
     networks:
       - coevolve
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -35,7 +42,7 @@ services:
     environment:
       - POSTGRES_DB=coevolve
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -77,7 +84,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/coevolve.json
     depends_on:
       - prometheus

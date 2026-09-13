@@ -1,9 +1,7 @@
 """SQLAlchemy ORM models for the CoEvolve Sandbox API."""
 
-from __future__ import annotations
-
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -20,7 +18,7 @@ from .database import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _uuid() -> str:
@@ -50,7 +48,7 @@ class EpisodeRecord(Base):
     )
     vulnerability_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
     difficulty_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0=secure, 1=vuln
+    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)
     task_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     patch_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     exploit_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -99,3 +97,19 @@ class EloRecord(Base):
     developer_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     episodes_played: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ApiKeyRecord(Base):
+    """Persisted API key (hash only — raw keys are never stored).
+
+    Created automatically by ``Base.metadata.create_all`` on startup.
+    """
+
+    __tablename__ = "api_keys"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    tier: Mapped[str] = mapped_column(String(32), default="standard")
+    disabled: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[float] = mapped_column(Float, default=0.0)
+    last_used: Mapped[float] = mapped_column(Float, default=0.0)

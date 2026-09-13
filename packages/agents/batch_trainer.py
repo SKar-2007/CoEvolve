@@ -196,11 +196,12 @@ class TrainingSession:
                     f"secure={current_win_rate:.1%}"
                 )
 
-            # Check convergence
+            # Check convergence (early stop works regardless of verbosity)
             if i >= self.convergence_window:
                 conv = self._check_convergence(i)
-                if conv.converged and verbose:
-                    print(f"  Converged at episode {i + 1}: {conv.message}")
+                if conv.converged:
+                    if verbose:
+                        print(f"  Converged at episode {i + 1}: {conv.message}")
                     break
 
         total_time = time.time() - t0

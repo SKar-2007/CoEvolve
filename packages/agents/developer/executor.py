@@ -71,21 +71,7 @@ class DeveloperAgent:
 
     @staticmethod
     def _format_task(task: dict[str, Any]) -> str:
-        lines = [f"TASK: {task.get('task_description', '')}"]
-        context_files = task.get("context_files", [])
-        if context_files:
-            file_strs = []
-            for f in context_files:
-                if isinstance(f, str):
-                    file_strs.append(f)
-                elif isinstance(f, dict):
-                    path = f.get("path", "unknown")
-                    snippet = f.get("snippet", "")
-                    file_strs.append(f"{path}: {snippet}" if snippet else path)
-                else:
-                    # ContextFile pydantic model or similar
-                    file_strs.append(getattr(f, "path", str(f)))
-            lines.append(f"CONTEXT FILES: {', '.join(file_strs)}")
-        if task.get("acceptance_criteria"):
-            lines.append(f"ACCEPTANCE CRITERIA: {task['acceptance_criteria']}")
-        return "\n".join(lines)
+        # Canonical implementation lives in formatting.format_task
+        from .formatting import format_task
+
+        return format_task(task)

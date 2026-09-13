@@ -34,6 +34,20 @@ jobs:
       - run: pip install mypy pydantic pydantic-settings sqlalchemy
       - run: mypy packages/ --ignore-missing-imports --explicit-package-bases
 
+  security:
+    name: Security (secrets + deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install detect-secrets==1.5.* pip-audit==2.10.*
+      - name: Fail on new secrets vs baseline
+        run: detect-secrets scan --baseline .secrets.baseline
+      - name: Fail on known dependency vulnerabilities
+        run: pip-audit -r requirements.txt
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

@@ -1,100 +1,1005 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, Metrics } from "@/lib/api";
+import { useEffect, useState, useCallback } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+interface Metrics {
+  total_episodes: number;
+  secure_rate: number;
+  epo: { attacker: number; developer: number };
+  rules_count: number;
+}
+
+interface Episode {
+  episode_id: string;
+  status: string;
+  vulnerability_class: string | null;
+  difficulty_tier: number | null;
+  outcome: number | null;
+  task_description: string | null;
+  patch_text: string | null;
+  judge_verdict: Record<string, unknown> | null;
+  error: string | null;
+  attacker_rating: number;
+  developer_rating: number;
+  prompt_version: number;
+  created_at: string;
+}
+
+interface Rule {
+  id: string;
+  rule_text: string;
+  vulnerability_class: string;
+  source_pattern: string;
+  recommended_fix: string;
+  approved: boolean;
+}
+
+interface RuleDetail extends Rule {
+  source_trace_id: string;
+  prompt_version: number;
+  created_at: string;
+}
+
+interface Prompt {
+  id: string;
+  version: number;
+  base_prompt: string;
+  rules: unknown[];
+  commit_message: string;
+  parent_version: number | null;
+  created_at: string;
+}
+
+interface PromptDiff {
+  from_version: number;
+  to_version: number;
+  added: string[];
+  removed: string[];
+}
+
+interface Job {
+  job_id: string;
+  status: string;
+  vulnerability_class: string;
+  language: string;
+  context_hint: string;
+  max_retries: number;
+  use_react: boolean;
+  queue_position: number | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  result: Record<string, unknown>;
+  error: string;
+}
+
+interface Coverage {
+  vulnerability_class: string;
+  total_episodes: number;
+  detected_count: number;
+  secure_count: number;
+  coverage_rate: number;
+}
+
+type Tab = "overview" | "episodes" | "rules" | "prompts" | "jobs" | "coverage";
+
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{
+        background: color,
+        padding: "2px 8px",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        padding: 24,
+        marginBottom: 24,
+      }}
+    >
+      <h2
+        style={{
+          fontSize: 14,
+          color: "var(--text-dim)",
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          marginBottom: 16,
+        }}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Pre({ text }: { text: string }) {
+  return (
+    <pre
+      style={{
+        background: "var(--surface-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        padding: 12,
+        fontSize: 12,
+        lineHeight: 1.5,
+        overflow: "auto",
+        maxHeight: 300,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}
+    >
+      {text}
+    </pre>
+  );
+}
+
+function Field({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 6 }}>
+      <span style={{ color: "var(--text-dim)", minWidth: 150, flexShrink: 0 }}>{k}</span>
+      <span style={{ wordBreak: "break-word" }}>{v}</span>
+    </div>
+  );
+}
+
+function BarChart({
+  data,
+  maxVal,
+}: {
+  data: { label: string; value: number; color: string }[];
+  maxVal: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {data.map((d) => (
+        <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ width: 140, fontSize: 13, color: "var(--text-dim)", textAlign: "right" }}>
+            {d.label}
+          </span>
+          <div
+            style={{
+              flex: 1,
+              height: 20,
+              background: "var(--surface-2)",
+              borderRadius: 4,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${(d.value / maxVal) * 100}%`,
+                background: d.color,
+                borderRadius: 4,
+                transition: "width 0.3s",
+              }}
+            />
+          </div>
+          <span style={{ width: 30, fontSize: 13, fontWeight: 600 }}>{d.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EloBar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        <span style={{ fontWeight: 700, color }}>{Math.round(value)}</span>
+      </div>
+      <div
+        style={{
+          height: 8,
+          background: "var(--surface-2)",
+          borderRadius: 4,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${((value - 1000) / 1500) * 100}%`,
+            background: color,
+            borderRadius: 4,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function outcomeBadge(outcome: number | null, status: string) {
+  if (outcome === 0) return <Badge label="SECURE" color="#4caf5030" />;
+  if (outcome === 1) return <Badge label="VULN" color="#ff545130" />;
+  if (status === "failed") return <Badge label="FAILED" color="#8888a030" />;
+  return <Badge label={status.toUpperCase()} color="#8888a030" />;
+}
 
 export default function Dashboard() {
+  const [tab, setTab] = useState<Tab>("overview");
   const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [error, setError] = useState("");
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [coverage, setCoverage] = useState<Coverage[]>([]);
+  const [promptCurrent, setPromptCurrent] = useState<Prompt | null>(null);
+  const [promptHistory, setPromptHistory] = useState<Prompt[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    api.metrics().then(setMetrics).catch((e) => setError(e.message));
+  const [expandedEp, setExpandedEp] = useState<string | null>(null);
+  const [ruleDetail, setRuleDetail] = useState<Record<string, RuleDetail>>({});
+  const [diffV1, setDiffV1] = useState("");
+  const [diffV2, setDiffV2] = useState("");
+  const [diff, setDiff] = useState<PromptDiff | null>(null);
+  const [diffError, setDiffError] = useState("");
+  const [jobForm, setJobForm] = useState({ vulnerability_class: "SQLi", language: "python", use_react: false });
+  const [running, setRunning] = useState(false);
+  const [lastRun, setLastRun] = useState<string>("");
+
+  const fetchData = useCallback(async () => {
+    try {
+      const get = async (p: string) => {
+        const r = await fetch(`${API}${p}`);
+        if (!r.ok) return null;
+        return r.json();
+      };
+      const [m, e, r, c, pc, ph, j] = await Promise.all([
+        get("/metrics"),
+        get("/episodes?limit=100"),
+        get("/rules?limit=100"),
+        get("/vulnerabilities/coverage"),
+        get("/prompts/current"),
+        get("/prompts/history?limit=50"),
+        get("/training/jobs?limit=50"),
+      ]);
+      if (m) setMetrics(m);
+      if (e) setEpisodes(e);
+      if (r) setRules(r);
+      if (c) setCoverage(c);
+      setPromptCurrent(pc);
+      if (ph) setPromptHistory(ph);
+      if (j) setJobs(j);
+      setError(false);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <div className="text-6xl">⚠</div>
-        <h1 className="text-xl font-semibold text-zinc-200">Cannot reach backend</h1>
-        <p className="text-zinc-500 text-sm max-w-md text-center">{error}</p>
-        <p className="text-zinc-600 text-xs">Make sure the Render backend is deployed and the API URL is set.</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
-  if (!metrics) {
-    return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="flex items-center gap-3 text-zinc-500">
-          <div className="w-5 h-5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-          Loading...
-        </div>
-      </div>
-    );
-  }
-
-  const securePct = (metrics.secure_rate * 100).toFixed(1);
-  const atk = metrics.epo.attacker || 1500;
-  const dev = metrics.epo.developer || 1500;
-
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-8">
-        <span className="text-red-500">co</span>
-        <span className="text-amber-400">evolve</span>
-        <span className="text-zinc-600 text-base ml-3 font-normal">Dashboard</span>
-      </h1>
-
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Episodes" value={String(metrics.total_episodes)} />
-        <StatCard label="Secure Rate" value={`${securePct}%`} accent={metrics.secure_rate > 0.5 ? "green" : "red"} />
-        <StatCard label="Rules Distilled" value={String(metrics.rules_count)} accent="blue" />
-        <StatCard label="Episodes Played" value={String(metrics.total_episodes)} />
-      </div>
-
-      {/* Elo chart */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Elo Ratings</h2>
-        <div className="space-y-4">
-          <EloRow label="Attacker" value={atk} color="bg-red-500" textColor="text-red-400" />
-          <EloRow label="Developer" value={dev} color="bg-amber-400" textColor="text-amber-400" />
-        </div>
-        <div className="mt-4 flex items-center gap-4 text-xs text-zinc-600">
-          <span>Range: 1000–2500</span>
-          <span>•</span>
-          <span>K-factor: 32</span>
-          <span>•</span>
-          <span>{metrics.total_episodes} games played</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
-  const colorMap: Record<string, string> = {
-    green: "text-emerald-400",
-    red: "text-red-400",
-    blue: "text-blue-400",
+  const fetchRuleDetail = async (id: string) => {
+    if (ruleDetail[id]) {
+      const next = { ...ruleDetail };
+      delete next[id];
+      setRuleDetail(next);
+      return;
+    }
+    try {
+      const r = await fetch(`${API}/rules/${id}`);
+      if (r.ok) setRuleDetail({ ...ruleDetail, [id]: await r.json() });
+    } catch {
+      /* ignore */
+    }
   };
-  return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-      <div className="text-xs text-zinc-500 mb-1">{label}</div>
-      <div className={`text-3xl font-bold ${accent ? colorMap[accent] || "text-white" : "text-white"}`}>{value}</div>
-    </div>
-  );
-}
 
-function EloRow({ label, value, color, textColor }: { label: string; value: number; color: string; textColor: string }) {
-  const pct = Math.max(0, Math.min(100, ((value - 1000) / 1500) * 100));
+  const fetchDiff = async () => {
+    setDiffError("");
+    setDiff(null);
+    try {
+      const r = await fetch(`${API}/prompts/diff/${diffV1}/${diffV2}`);
+      if (!r.ok) {
+        setDiffError(`Versions not found (${r.status})`);
+        return;
+      }
+      setDiff(await r.json());
+    } catch {
+      setDiffError("Backend unreachable");
+    }
+  };
+
+  const enqueueJob = async () => {
+    try {
+      const r = await fetch(`${API}/training/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(jobForm),
+      });
+      if (r.ok) fetchData();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const runTraining = async () => {
+    setRunning(true);
+    setLastRun("");
+    try {
+      const r = await fetch(`${API}/training/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await r.json();
+      setLastRun(
+        `episode=${body.episode_id} status=${body.status} outcome=${body.judge_outcome} rule=${body.rule_distilled}`
+      );
+      fetchData();
+    } catch {
+      setLastRun("request failed");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const stopEpisode = async (id: string) => {
+    try {
+      await fetch(`${API}/episodes/${id}/stop`, { method: "POST" });
+      fetchData();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Derived stats
+  const vulnByClass: Record<string, { total: number; vuln: number }> = {};
+  episodes.forEach((ep) => {
+    const cls = ep.vulnerability_class || "Unknown";
+    if (!vulnByClass[cls]) vulnByClass[cls] = { total: 0, vuln: 0 };
+    vulnByClass[cls].total++;
+    if (ep.outcome === 1) vulnByClass[cls].vuln++;
+  });
+
+  const classData = Object.entries(vulnByClass).map(([cls, d]) => ({
+    label: cls,
+    value: d.total,
+    color: d.vuln > 0 ? "var(--accent)" : "var(--green)",
+  }));
+
+  const secureCount = episodes.filter((e) => e.outcome === 0).length;
+  const vulnCount = episodes.filter((e) => e.outcome === 1).length;
+  const maxClass = Math.max(...classData.map((d) => d.value), 1);
+
+  const eloTimeline = [...episodes].reverse();
+
+  const windowSize = 10;
+  const rollingSecureRate: number[] = [];
+  for (let i = 0; i < eloTimeline.length; i++) {
+    const start = Math.max(0, i - windowSize + 1);
+    const window = eloTimeline.slice(start, i + 1);
+    const secure = window.filter((e) => e.outcome === 0).length;
+    rollingSecureRate.push(secure / window.length);
+  }
+
+  const perClassPerf: Record<string, { secure: number; total: number }> = {};
+  eloTimeline.forEach((ep) => {
+    const cls = ep.vulnerability_class || "Unknown";
+    if (!perClassPerf[cls]) perClassPerf[cls] = { secure: 0, total: 0 };
+    perClassPerf[cls].total++;
+    if (ep.outcome === 0) perClassPerf[cls].secure++;
+  });
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "episodes", label: `Episodes (${episodes.length})` },
+    { id: "rules", label: `Rules (${rules.length})` },
+    { id: "prompts", label: "Prompts" },
+    { id: "jobs", label: `Jobs (${jobs.length})` },
+    { id: "coverage", label: "Coverage" },
+  ];
+
+  const fmtDate = (s: string) => {
+    try {
+      return new Date(s).toLocaleString();
+    } catch {
+      return s;
+    }
+  };
+
   return (
-    <div className="flex items-center gap-4">
-      <span className={`text-sm font-semibold w-20 ${textColor}`}>{label}</span>
-      <div className="flex-1 h-6 bg-zinc-800 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-sm font-mono text-zinc-300 w-12 text-right">{value.toFixed(0)}</span>
-    </div>
+    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>
+      <header style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h1 style={{ fontSize: 32, fontWeight: 700 }}>
+            <span style={{ color: "var(--accent)" }}>Co</span>Evolve
+          </h1>
+          <p style={{ color: "var(--text-dim)", marginTop: 4 }}>Adversarial Security Training Platform</p>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button
+            onClick={runTraining}
+            disabled={running}
+            style={{
+              background: running ? "var(--surface-2)" : "var(--accent)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: running ? "wait" : "pointer",
+            }}
+          >
+            {running ? "Training…" : "Run training now"}
+          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: error ? "var(--accent)" : "var(--green)",
+              }}
+            />
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {loading ? "Connecting..." : error ? "Offline" : "Live"}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {lastRun && (
+        <p style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 16 }}>Last run: {lastRun}</p>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "#ff545120",
+            border: "1px solid var(--accent)",
+            padding: 16,
+            borderRadius: 8,
+            marginBottom: 24,
+          }}
+        >
+          <p style={{ color: "var(--accent)" }}>Backend unreachable. Start the API on port 8000.</p>
+        </div>
+      )}
+
+      <nav style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              background: tab === t.id ? "var(--surface)" : "transparent",
+              border: "1px solid var(--border)",
+              borderBottom: tab === t.id ? "2px solid var(--accent)" : "1px solid var(--border)",
+              borderRadius: "6px 6px 0 0",
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: tab === t.id ? 700 : 400,
+              cursor: "pointer",
+              color: "var(--text)",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "overview" && (
+        <>
+          {metrics && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 24 }}>
+              {[
+                { label: "Episodes", value: metrics.total_episodes, icon: "📊" },
+                { label: "Secure Rate", value: `${(metrics.secure_rate * 100).toFixed(0)}%`, icon: "🛡️" },
+                { label: "Rules", value: metrics.rules_count, icon: "📏" },
+                { label: "Attacker ELO", value: Math.round(metrics.epo.attacker), icon: "⚔️" },
+                { label: "Developer ELO", value: Math.round(metrics.epo.developer), icon: "🔧" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: 20,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "var(--text-dim)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
+                      {s.label}
+                    </span>
+                    <span style={{ fontSize: 16 }}>{s.icon}</span>
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
+            {metrics && (
+              <Section title="ELO Ratings">
+                <EloBar label="Attacker" value={metrics.epo.attacker} color="var(--accent)" />
+                <EloBar label="Developer" value={metrics.epo.developer} color="var(--accent-2)" />
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Rating Gap</span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {Math.round(metrics.epo.developer - metrics.epo.attacker)} pts (Dev lead)
+                    </span>
+                  </div>
+                </div>
+              </Section>
+            )}
+            <Section title="Episodes by Class">
+              {classData.length > 0 ? (
+                <BarChart data={classData} maxVal={maxClass} />
+              ) : (
+                <p style={{ color: "var(--text-dim)" }}>No data yet.</p>
+              )}
+            </Section>
+          </div>
+
+          <Section title="Security Outcomes">
+            <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    height: 32,
+                    background: "var(--surface-2)",
+                    borderRadius: 6,
+                    overflow: "hidden",
+                    display: "flex",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${(secureCount / Math.max(secureCount + vulnCount, 1)) * 100}%`,
+                      background: "var(--green)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#fff",
+                      minWidth: secureCount > 0 ? 40 : 0,
+                    }}
+                  >
+                    {secureCount}
+                  </div>
+                  <div
+                    style={{
+                      width: `${(vulnCount / Math.max(secureCount + vulnCount, 1)) * 100}%`,
+                      background: "var(--accent)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#fff",
+                      minWidth: vulnCount > 0 ? 40 : 0,
+                    }}
+                  >
+                    {vulnCount}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 24 }}>
+                <span style={{ fontSize: 13 }}>🟩 Secure ({secureCount})</span>
+                <span style={{ fontSize: 13 }}>🟥 Vulnerable ({vulnCount})</span>
+              </div>
+            </div>
+          </Section>
+
+          {rollingSecureRate.length > 2 && (
+            <Section title={`Convergence — Rolling Secure Rate (window=${windowSize})`}>
+              <div style={{ position: "relative", height: 180, marginBottom: 16 }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: "50%",
+                    height: 1,
+                    background: "var(--border)",
+                    opacity: 0.5,
+                  }}
+                >
+                  <span style={{ position: "absolute", right: 0, top: -8, fontSize: 10, color: "var(--text-dim)" }}>
+                    50%
+                  </span>
+                </div>
+                <svg
+                  viewBox={`0 0 ${rollingSecureRate.length * 10} 100`}
+                  style={{ width: "100%", height: "100%", position: "absolute" }}
+                  preserveAspectRatio="none"
+                >
+                  <polyline
+                    points={rollingSecureRate.map((r, i) => `${i * 10 + 5},${100 - r * 100}`).join(" ")}
+                    fill="none"
+                    stroke="var(--green)"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              </div>
+            </Section>
+          )}
+
+          <Section title="Per-Class Performance">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+              {Object.entries(perClassPerf)
+                .sort((a, b) => b[1].total - a[1].total)
+                .map(([cls, d]) => (
+                  <div
+                    key={cls}
+                    style={{
+                      background: "var(--surface-2)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      padding: 14,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{cls}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{d.total} eps</span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>
+                      {(d.secure / d.total * 100).toFixed(0)}% secure ({d.secure}/{d.total})
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </Section>
+
+          {eloTimeline.length > 2 && (
+            <Section title="ELO Progression">
+              <div style={{ position: "relative", height: 200 }}>
+                {[1200, 1400, 1600, 1800].map((v) => (
+                  <div
+                    key={v}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: `${((v - 1000) / 1000) * 100}%`,
+                      height: 1,
+                      background: "var(--border)",
+                      opacity: 0.3,
+                    }}
+                  >
+                    <span style={{ position: "absolute", left: 0, top: -8, fontSize: 10, color: "var(--text-dim)" }}>
+                      {v}
+                    </span>
+                  </div>
+                ))}
+                <svg
+                  viewBox={`0 0 ${eloTimeline.length * 20} 200`}
+                  style={{ width: "100%", height: "100%", position: "absolute" }}
+                  preserveAspectRatio="none"
+                >
+                  <polyline
+                    points={eloTimeline
+                      .map((ep, i) => `${i * 20 + 10},${200 - ((ep.attacker_rating - 1000) / 1000) * 200}`)
+                      .join(" ")}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <polyline
+                    points={eloTimeline
+                      .map((ep, i) => `${i * 20 + 10},${200 - ((ep.developer_rating - 1000) / 1000) * 200}`)
+                      .join(" ")}
+                    fill="none"
+                    stroke="var(--accent-2)"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              </div>
+            </Section>
+          )}
+        </>
+      )}
+
+      {tab === "episodes" && (
+        <Section title={`All Episodes (${episodes.length}) — click a row for full detail`}>
+          {episodes.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>No episodes yet. Click “Run training now” above.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {episodes.map((ep) => (
+                <div
+                  key={ep.episode_id}
+                  style={{
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    onClick={() => setExpandedEp(expandedEp === ep.episode_id ? null : ep.episode_id)}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <Badge label={ep.vulnerability_class || "—"} color="#8888a030" />
+                      <span style={{ fontSize: 12, color: "var(--text-dim)" }}>T{ep.difficulty_tier ?? "?"}</span>
+                      <span style={{ fontSize: 12, fontFamily: "monospace" }}>{ep.episode_id}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{fmtDate(ep.created_at)}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        {Math.round(ep.attacker_rating)} / {Math.round(ep.developer_rating)}
+                      </span>
+                      {outcomeBadge(ep.outcome, ep.status)}
+                    </div>
+                  </div>
+                  {expandedEp === ep.episode_id && (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                      <Field k="Status" v={ep.status} />
+                      <Field k="Prompt version" v={`v${ep.prompt_version}`} />
+                      <Field k="Task" v={ep.task_description || "—"} />
+                      {ep.error && <Field k="Error" v={<span style={{ color: "var(--accent)" }}>{ep.error}</span>} />}
+                      <div style={{ fontSize: 13, color: "var(--text-dim)", margin: "8px 0 4px" }}>Patch</div>
+                      <Pre text={ep.patch_text || "(empty)"} />
+                      <div style={{ fontSize: 13, color: "var(--text-dim)", margin: "8px 0 4px" }}>Judge verdict</div>
+                      <Pre text={ep.judge_verdict ? JSON.stringify(ep.judge_verdict, null, 2) : "(none)"} />
+                      {ep.status !== "completed" && ep.status !== "failed" && (
+                        <button
+                          onClick={() => stopEpisode(ep.episode_id)}
+                          style={{
+                            marginTop: 8,
+                            background: "var(--accent)",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 6,
+                            padding: "6px 14px",
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Stop episode
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {tab === "rules" && (
+        <Section title={`Distilled Rules (${rules.length}) — click a row for full detail`}>
+          {rules.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>No rules distilled yet.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {rules.map((r) => (
+                <div
+                  key={r.id}
+                  style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 12 }}
+                >
+                  <div
+                    onClick={() => fetchRuleDetail(r.id)}
+                    style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", marginBottom: 6 }}
+                  >
+                    <Badge label={r.vulnerability_class} color="var(--accent-2)20" />
+                    {r.approved && <Badge label="APPROVED" color="#4caf5030" />}
+                  </div>
+                  <p style={{ fontSize: 13, lineHeight: 1.5 }}>{r.rule_text}</p>
+                  {ruleDetail[r.id] && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                      <Field k="Source pattern" v={<code style={{ fontSize: 12 }}>{ruleDetail[r.id].source_pattern || "—"}</code>} />
+                      <Field k="Recommended fix" v={ruleDetail[r.id].recommended_fix || "—"} />
+                      <Field k="Source trace" v={<code style={{ fontSize: 12 }}>{ruleDetail[r.id].source_trace_id || "—"}</code>} />
+                      <Field k="Prompt version" v={`v${ruleDetail[r.id].prompt_version}`} />
+                      <Field k="Created" v={fmtDate(ruleDetail[r.id].created_at)} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {tab === "prompts" && (
+        <>
+          <Section title="Current Prompt">
+            {promptCurrent ? (
+              <>
+                <Field k="Version" v={`v${promptCurrent.version}`} />
+                <Field k="Commit" v={promptCurrent.commit_message || "—"} />
+                <Field k="Parent" v={promptCurrent.parent_version !== null ? `v${promptCurrent.parent_version}` : "—"} />
+                <Field k="Active rules" v={promptCurrent.rules.length} />
+                <Field k="Created" v={fmtDate(promptCurrent.created_at)} />
+                <div style={{ fontSize: 13, color: "var(--text-dim)", margin: "8px 0 4px" }}>Base prompt</div>
+                <Pre text={promptCurrent.base_prompt} />
+              </>
+            ) : (
+              <p style={{ color: "var(--text-dim)" }}>No prompt versions yet.</p>
+            )}
+          </Section>
+          <Section title={`Version History (${promptHistory.length})`}>
+            {promptHistory.length === 0 ? (
+              <p style={{ color: "var(--text-dim)" }}>No history.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {promptHistory.map((p) => (
+                  <div key={p.id} style={{ display: "flex", gap: 12, fontSize: 13, alignItems: "center" }}>
+                    <Badge label={`v${p.version}`} color="#8888a030" />
+                    <span style={{ flex: 1 }}>{p.commit_message || "—"}</span>
+                    <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{p.rules.length} rules</span>
+                    <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{fmtDate(p.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+          <Section title="Diff Two Versions">
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input
+                value={diffV1}
+                onChange={(e) => setDiffV1(e.target.value)}
+                placeholder="from (e.g. 1)"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", width: 140 }}
+              />
+              <input
+                value={diffV2}
+                onChange={(e) => setDiffV2(e.target.value)}
+                placeholder="to (e.g. 2)"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", width: 140 }}
+              />
+              <button
+                onClick={fetchDiff}
+                style={{ background: "var(--accent-2)", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}
+              >
+                Diff
+              </button>
+            </div>
+            {diffError && <p style={{ color: "var(--accent)", fontSize: 13 }}>{diffError}</p>}
+            {diff && (
+              <>
+                <Field k="Added" v={`${diff.added.length} rule(s)`} />
+                {diff.added.map((a, i) => (
+                  <p key={`a${i}`} style={{ fontSize: 12, color: "var(--green)", marginBottom: 4 }}>+ {a}</p>
+                ))}
+                <Field k="Removed" v={`${diff.removed.length} rule(s)`} />
+                {diff.removed.map((r, i) => (
+                  <p key={`r${i}`} style={{ fontSize: 12, color: "var(--accent)", marginBottom: 4 }}>- {r}</p>
+                ))}
+              </>
+            )}
+          </Section>
+        </>
+      )}
+
+      {tab === "jobs" && (
+        <>
+          <Section title="Enqueue Training Job (async)">
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                value={jobForm.vulnerability_class}
+                onChange={(e) => setJobForm({ ...jobForm, vulnerability_class: e.target.value })}
+                placeholder="vulnerability class"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", width: 180 }}
+              />
+              <input
+                value={jobForm.language}
+                onChange={(e) => setJobForm({ ...jobForm, language: e.target.value })}
+                placeholder="language"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text)", width: 120 }}
+              />
+              <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={jobForm.use_react}
+                  onChange={(e) => setJobForm({ ...jobForm, use_react: e.target.checked })}
+                />
+                ReAct
+              </label>
+              <button
+                onClick={enqueueJob}
+                style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}
+              >
+                Enqueue
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+              Jobs are processed by the background worker (<code>make worker</code>). Requires Redis in multi-process setups.
+            </p>
+          </Section>
+          <Section title={`Training Jobs (${jobs.length})`}>
+            {jobs.length === 0 ? (
+              <p style={{ color: "var(--text-dim)" }}>No jobs yet.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {jobs.map((j) => (
+                  <div key={j.job_id} style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontFamily: "monospace" }}>{j.job_id}</span>
+                      <Badge
+                        label={j.status.toUpperCase()}
+                        color={j.status === "completed" ? "#4caf5030" : j.status === "failed" ? "#ff545130" : j.status === "running" ? "var(--accent-2)30" : "#8888a030"}
+                      />
+                    </div>
+                    <Field k="Class / lang" v={`${j.vulnerability_class} / ${j.language}${j.use_react ? " (ReAct)" : ""}`} />
+                    {j.queue_position !== null && j.status === "pending" && <Field k="Queue position" v={j.queue_position} />}
+                    {j.error && <Field k="Error" v={<span style={{ color: "var(--accent)" }}>{j.error}</span>} />}
+                    {Object.keys(j.result).length > 0 && (
+                      <Pre text={JSON.stringify(j.result, null, 2)} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        </>
+      )}
+
+      {tab === "coverage" && (
+        <Section title={`Vulnerability Coverage (${coverage.length} classes)`}>
+          {coverage.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>No coverage data yet — run training first.</p>
+          ) : (
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--text-dim)" }}>
+                  <th style={{ padding: "8px 4px", borderBottom: "1px solid var(--border)" }}>Class</th>
+                  <th style={{ padding: "8px 4px", borderBottom: "1px solid var(--border)" }}>Episodes</th>
+                  <th style={{ padding: "8px 4px", borderBottom: "1px solid var(--border)" }}>Detected</th>
+                  <th style={{ padding: "8px 4px", borderBottom: "1px solid var(--border)" }}>Secure</th>
+                  <th style={{ padding: "8px 4px", borderBottom: "1px solid var(--border)" }}>Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coverage.map((c) => (
+                  <tr key={c.vulnerability_class} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "8px 4px" }}>{c.vulnerability_class}</td>
+                    <td style={{ padding: "8px 4px" }}>{c.total_episodes}</td>
+                    <td style={{ padding: "8px 4px" }}>{c.detected_count}</td>
+                    <td style={{ padding: "8px 4px" }}>{c.secure_count}</td>
+                    <td style={{ padding: "8px 4px", fontWeight: 600 }}>{(c.coverage_rate * 100).toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Section>
+      )}
+
+      <footer style={{ textAlign: "center", padding: "24px 0", color: "var(--text-dim)", fontSize: 12 }}>
+        CoEvolve — Adversarial Security Training Platform
+      </footer>
+    </main>
   );
 }

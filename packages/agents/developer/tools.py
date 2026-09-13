@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -58,24 +59,26 @@ class ToolCall:
 
 
 class ReadFileTool:
-    """Read a file from the workspace."""
+    """Read a file from the workspace.
+
+    SECURITY: resolves the full path and verifies it stays inside the
+    workspace directory before reading, preventing path-traversal attacks
+    (e.g. ../../etc/passwd, /etc/passwd, symlink escapes).
+    """
 
     name = "read_file"
     description = "Read the contents of a file. Args: path (str)"
 
     def __init__(self, workspace: Path) -> None:
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
 
     def execute(self, **kwargs: Any) -> str:
         path = kwargs.get("path", "")
         if not path:
             return "ERROR: path is required"
-        try:
-            target = (self.workspace / path).resolve()
-            if not target.is_relative_to(self.workspace.resolve()):
-                return "ERROR: Path traversal detected. Access denied."
-        except Exception as exc:
-            return f"ERROR invalid path: {exc}"
+        target = (self.workspace / path).resolve()
+        if not target.is_relative_to(self.workspace):
+            return f"ERROR: path traversal detected: {path}"
         if not target.exists():
             return f"ERROR: file not found: {path}"
         try:
@@ -86,25 +89,26 @@ class ReadFileTool:
 
 
 class WriteFileTool:
-    """Write content to a file in the workspace."""
+    """Write content to a file in the workspace.
+
+    SECURITY: resolves the full path and verifies it stays inside the
+    workspace directory before writing, preventing path-traversal attacks.
+    """
 
     name = "write_file"
     description = "Write content to a file. Args: path (str), content (str)"
 
     def __init__(self, workspace: Path) -> None:
-        self.workspace = workspace
+        self.workspace = workspace.resolve()
 
     def execute(self, **kwargs: Any) -> str:
         path = kwargs.get("path", "")
         content = kwargs.get("content", "")
         if not path:
             return "ERROR: path is required"
-        try:
-            target = (self.workspace / path).resolve()
-            if not target.is_relative_to(self.workspace.resolve()):
-                return "ERROR: Path traversal detected. Access denied."
-        except Exception as exc:
-            return f"ERROR invalid path: {exc}"
+        target = (self.workspace / path).resolve()
+        if not target.is_relative_to(self.workspace):
+            return f"ERROR: path traversal detected: {path}"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
@@ -114,12 +118,33 @@ class WriteFileTool:
 
 
 class RunShellTool:
-    """Run a shell command in the workspace (sandboxed)."""
+    """Run a shell command in the workspace (sandboxed).
+
+    SECURITY: the BLOCKED filter below is defense-in-depth only. The real
+    security boundary is the Docker sandbox isolation (see
+    packages/sandbox/manager.py). Never rely on this blocklist alone when
+    running outside a container.
+    """
 
     name = "run_shell"
     description = "Run a shell command. Args: command (str), timeout (int, optional, default 30)"
 
-    BLOCKED = frozenset({"rm -rf /", "mkfs", "dd if=", "> /dev/sda"})
+    BLOCKED = frozenset(
+        {
+            "rm -rf /",
+            "mkfs",
+            "dd if=",
+            "> /dev/sda",
+            "shutdown",
+            "reboot",
+            "halt",
+            ":(){:|:&};:",
+            "chmod -R 777 /",
+            "chown -R",
+            "> /dev/sd",
+            "mkfs.ext",
+        }
+    )
 
     def __init__(self, workspace: Path, timeout: int = 30) -> None:
         self.workspace = workspace
@@ -132,9 +157,10 @@ class RunShellTool:
         if any(b in command for b in self.BLOCKED):
             return f"ERROR: blocked dangerous command: {command}"
         try:
+            args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -212,8 +238,6 @@ class RunTestsTool:
                 timeout=self.timeout,
             )
             output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr]\n{result.stderr}"
             if result.returncode == 0:
                 return f"PASSED\n{output}"
             return f"FAILED (exit {result.returncode})\n{output}"
@@ -235,8 +259,8 @@ class GitDiffTool:
     def execute(self, **kwargs: Any) -> str:
         try:
             result = subprocess.run(
-                "git diff",
-                shell=True,
+                ["git", "diff"],
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -260,11 +284,11 @@ class GitCommitTool:
         message = kwargs.get("message", "auto-commit")
         try:
             subprocess.run(
-                "git add -A", shell=True, cwd=str(self.workspace), check=True, timeout=10
+                ["git", "add", "-A"], shell=False, cwd=str(self.workspace), check=True, timeout=10
             )
             result = subprocess.run(
-                f"git commit -m {json.dumps(message)}",
-                shell=True,
+                ["git", "commit", "-m", message],
+                shell=False,
                 cwd=str(self.workspace),
                 capture_output=True,
                 text=True,
@@ -434,21 +458,16 @@ class ReActDeveloperAgent:
     def _parse_tool_call(text: str) -> ToolCall | None:
         """Extract a tool call from the LLM response."""
         action_match = re.search(r"Action:\s*(\w+)", text)
+        input_match = re.search(r"Action Input:\s*(\{.*?\})", text, re.DOTALL)
         if not action_match:
             return None
         tool_name = action_match.group(1)
         arguments: dict[str, Any] = {}
-        input_match = re.search(r"Action Input:\s*", text)
         if input_match:
-            start_idx = input_match.end()
-            brace_idx = text.find("{", start_idx)
-            if brace_idx != -1:
-                try:
-                    obj, _ = json.JSONDecoder().raw_decode(text[brace_idx:])
-                    if isinstance(obj, dict):
-                        arguments = obj
-                except Exception:
-                    pass
+            import contextlib
+
+            with contextlib.suppress(json.JSONDecodeError):
+                arguments = json.loads(input_match.group(1))
         return ToolCall(
             tool_name=tool_name,
             arguments=arguments,
@@ -465,20 +484,6 @@ class ReActDeveloperAgent:
     @staticmethod
     def _format_task(task: dict[str, Any]) -> str:
         """Format a task dict into a user prompt."""
-        lines = [f"TASK: {task.get('task_description', '')}"]
-        context_files = task.get("context_files", [])
-        if context_files:
-            file_strs = []
-            for f in context_files:
-                if isinstance(f, str):
-                    file_strs.append(f)
-                elif isinstance(f, dict):
-                    path = f.get("path", "unknown")
-                    snippet = f.get("snippet", "")
-                    file_strs.append(f"{path}: {snippet}" if snippet else path)
-                else:
-                    file_strs.append(getattr(f, "path", str(f)))
-            lines.append(f"CONTEXT FILES: {', '.join(file_strs)}")
-        if task.get("acceptance_criteria"):
-            lines.append(f"ACCEPTANCE CRITERIA: {task['acceptance_criteria']}")
-        return "\n".join(lines)
+        from .formatting import format_task
+
+        return format_task(task)

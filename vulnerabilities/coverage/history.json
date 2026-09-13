@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "timestamp": "2026-09-12T00:00:00",
+      "metrics": {
+        "detection_rate": 0.0,
+        "mitigation_rate": 0.0,
+        "rule_coverage": 0.3,
+        "episodes_completed": 0
+      },
+      "event": "initial_setup"
+    }
+  ]
+}

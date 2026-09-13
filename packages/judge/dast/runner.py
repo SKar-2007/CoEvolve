@@ -223,6 +223,9 @@ def run_exploit_against_app(vuln_class: str, port: int, lang: str = "python") ->
         "SSTI": ("/greet", "name", False, None),
         "SSRF": ("/fetch", "url", False, f"http://127.0.0.1:{port}/internal/metadata"),
         "OpenRedirect": ("/redirect", "url", False, None),
+        "Deserialization": ("/load", None, False, None),
+        "XXE": ("/parse", None, False, None),
+        "PrototypePollution": ("/merge", None, False, None),
     }
 
     endpoint, param, follow_redirects, payload_override = endpoint_map.get(

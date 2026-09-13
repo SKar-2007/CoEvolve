@@ -16,4 +16,16 @@ services:
         value: llama-3.3-70b-versatile
       - key: LOG_LEVEL
         value: INFO
+      # P0 production security defaults — set the sync:false values in the
+      # Render dashboard before deploying.
+      - key: REQUIRE_AUTH
+        value: true
+      - key: API_KEY_STORE
+        value: db
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: REDIS_URL
+        sync: false
     healthCheckPath: /health

@@ -1,0 +1,65 @@
+groups:
+  - name: coevolve
+    rules:
+      - alert: HighExploitRate
+        expr: rate(coevolve_vulnerabilities_detected_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High exploit detection rate"
+          description: "More than 0.1 exploits/sec detected over the last 5 minutes."
+
+      - alert: LLMHighLatencyP99
+        expr: histogram_quantile(0.99, rate(coevolve_llm_latency_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM p99 latency exceeds 10s"
+          description: "LLM inference p99 latency is above 10 seconds."
+
+      - alert: LLMHighLatencyP99Critical
+        expr: histogram_quantile(0.99, rate(coevolve_llm_latency_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM p99 latency exceeds 30s"
+          description: "LLM inference p99 latency is above 30 seconds."
+
+      - alert: AttackerELOHigh
+        expr: coevolve_attacker_elo > 1600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Attacker ELO rating is high"
+          description: "Attacker ELO has exceeded 1600, indicating strong offensive capability."
+
+      - alert: AttackerELODominating
+        expr: coevolve_attacker_elo - coevolve_developer_elo > 200
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Attacker ELO is dominating defender"
+          description: "Attacker ELO is more than 200 points above developer ELO."
+
+      - alert: EpisodeHighDuration
+        expr: histogram_quantile(0.95, rate(coevolve_episode_duration_seconds_bucket[5m])) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Episode duration p95 exceeds 2 minutes"
+          description: "Episode execution p95 duration is above 120 seconds."
+
+      - alert: SandboxContainersDown
+        expr: coevolve_docker_containers_running == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No sandbox containers running"
+          description: "All sandbox containers have stopped."

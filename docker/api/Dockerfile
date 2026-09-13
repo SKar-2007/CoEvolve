@@ -18,14 +18,10 @@ WORKDIR /app
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application code
-COPY packages/api /app/packages/api
-COPY packages/elo /app/packages/elo
-COPY packages/agents /app/packages/agents
-COPY packages/judge /app/packages/judge
-COPY packages/sandbox /app/packages/sandbox
-COPY packages/evolution /app/packages/evolution
-COPY packages/telemetry /app/packages/telemetry
+# Copy application code (whole packages tree so new modules like
+# training_service.py, cost_tracking.py, batch_trainer.py are never missed)
+COPY packages /app/packages
+COPY config /app/config
 COPY data /app/data
 
 # Set PYTHONPATH so imports work
@@ -38,6 +34,6 @@ USER coevolve
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
 
 CMD ["uvicorn", "packages.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

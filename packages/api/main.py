@@ -3,72 +3,111 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from .auth import APIKey, require_api_key_if_enabled
 from .config import get_settings
 from .database import Base, get_db, get_engine, get_session_factory
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 from .schemas import (
+    ConfigUpdateRequest,
     EloHistoryResponse,
-    EpisodeCreate,
     EpisodeRead,
+    EpisodeStopResponse,
     MetricsSnapshot,
+    PromptDiffResponse,
+    PromptRead,
+    RuleDetailRead,
     RuleRead,
+    TrainingJobEnqueueRequest,
+    TrainingJobRead,
     TrainingRunRequest,
     TrainingRunResponse,
+    VulnerabilityCoverage,
 )
-
-
-import logging
+from .task_queue import TrainingJob, get_task_queue
+from .training_service import (
+    get_current_ratings,
+    get_prompt_version,
+    persist_episode,
+    resolve_llm_provider,
+)
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        engine = get_engine()
+        Base.metadata.create_all(engine)
+        _seed_elo()
+        # Warm the key store so ADMIN_API_KEY bootstrap registers at startup
+        # (works for both memory and db backends).
+        from .auth import get_key_store
+
+        get_key_store()
+        logger.info("Database connected successfully")
+    except Exception as exc:
+        # Log and continue so /health stays available; training endpoints
+        # will surface DB errors per-request. Fail-fast is handled by
+        # docker-compose.prod.yml required-var validation instead.
+        logger.error("Database connection failed: %s", exc)
+        logger.error("Check your DATABASE_URL environment variable")
+    yield
+
 
 app = FastAPI(
-    title="CoEvolve Sandbox API",
+    title="CoEvolve API",
     version="0.1.0",
-    description="Automated Adversarial-Training-as-a-Service framework for autonomous coding agents",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    description="Adversarial Training as a Service",
+    lifespan=lifespan,
 )
 
 
-@app.on_event("startup")
-def startup() -> None:
-    try:
-        Base.metadata.create_all(get_engine())
-        _seed_elo()
-    except Exception as e:
-        logger.warning("Startup database check failed (will retry on first request): %s", e)
+def _configure_cors() -> None:
+    settings = get_settings()
+    origins = settings.cors_origin_list
+    if "*" in origins:
+        # Browsers reject allow_credentials with "*"; disable credentials
+        # in wildcard mode (dev default). Set CORS_ORIGINS to explicit
+        # origins in production to re-enable credentials.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+
+_configure_cors()
 
 
 def _seed_elo() -> None:
+    db = get_session_factory()()
     try:
-        db = get_session_factory()()
-        try:
-            if db.query(EloRecord).count() == 0:
-                db.add(EloRecord(id="global", attacker_rating=1500.0, developer_rating=1500.0))
-                db.commit()
-        finally:
-            db.close()
-    except Exception as e:
-        logger.warning("Could not seed initial ELO ratings: %s", e)
+        if db.query(EloRecord).count() == 0:
+            db.add(EloRecord(id="global", attacker_rating=1500.0, developer_rating=1500.0))
+            db.commit()
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -82,12 +121,7 @@ def health() -> dict[str, str]:
 @app.get("/metrics", response_model=MetricsSnapshot)
 def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
     total = db.query(func.count(EpisodeRecord.id)).scalar() or 0
-    secure = (
-        db.query(func.count(EpisodeRecord.id))
-        .filter(EpisodeRecord.outcome == 0)
-        .scalar()
-        or 0
-    )
+    secure = db.query(func.count(EpisodeRecord.id)).filter(EpisodeRecord.outcome == 0).scalar() or 0
     rules_count = db.query(func.count(RuleRecord.id)).scalar() or 0
     elo = db.get(EloRecord, "global")
     return MetricsSnapshot(
@@ -104,18 +138,6 @@ def metrics(db: Session = Depends(get_db)) -> MetricsSnapshot:
 # ---------------------------------------------------------------------------
 # Episodes
 # ---------------------------------------------------------------------------
-@app.post("/episodes", response_model=EpisodeRead, status_code=201)
-def create_episode(body: EpisodeCreate, db: Session = Depends(get_db)) -> EpisodeRecord:
-    ep = EpisodeRecord(
-        status="pending",
-        vulnerability_class=body.vulnerability_classes[0] if body.vulnerability_classes else "SQLi",
-    )
-    db.add(ep)
-    db.commit()
-    db.refresh(ep)
-    return ep
-
-
 @app.get("/episodes", response_model=list[EpisodeRead])
 def list_episodes(
     status: str | None = Query(None),
@@ -182,70 +204,155 @@ def list_rules(
 # ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
-@app.get("/prompts/current")
-def current_prompt(db: Session = Depends(get_db)) -> dict:
+@app.get("/prompts/current", response_model=PromptRead)
+def get_current_prompt(db: Session = Depends(get_db)) -> PromptRecord:
     prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
     if not prompt:
-        raise HTTPException(404, "No prompts found")
-    return {
-        "version": prompt.version,
-        "base_prompt": prompt.base_prompt,
-        "rules": prompt.rules,
-        "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
-    }
+        raise HTTPException(404, "No prompt versions found")
+    return prompt
 
 
-@app.get("/prompts/history")
-def prompt_history(db: Session = Depends(get_db)) -> list[dict]:
-    prompts = db.query(PromptRecord).order_by(PromptRecord.version.desc()).all()
-    return [
-        {
-            "version": p.version,
-            "base_prompt": p.base_prompt,
-            "rules": p.rules,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-        }
-        for p in prompts
-    ]
+@app.get("/prompts/history", response_model=list[PromptRead])
+def get_prompt_history(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> list[PromptRecord]:
+    return db.query(PromptRecord).order_by(PromptRecord.version.desc()).limit(limit).all()
+
+
+@app.get("/prompts/diff/{v1}/{v2}", response_model=PromptDiffResponse)
+def get_prompt_diff(v1: int, v2: int, db: Session = Depends(get_db)) -> PromptDiffResponse:
+    from ..evolution.store import PromptStore
+
+    store = PromptStore()
+    try:
+        diff = store.diff(v1, v2)
+    except KeyError as exc:
+        raise HTTPException(404, f"Version {v1} or {v2} not found") from exc
+    return PromptDiffResponse(
+        from_version=diff["from"],
+        to_version=diff["to"],
+        added=diff["added"],
+        removed=diff["removed"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rules — single rule
+# ---------------------------------------------------------------------------
+@app.get("/rules/{rule_id}", response_model=RuleDetailRead)
+def get_rule(rule_id: str, db: Session = Depends(get_db)) -> RuleRecord:
+    rule = db.get(RuleRecord, rule_id)
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    return rule
+
+
+# ---------------------------------------------------------------------------
+# Vulnerabilities — coverage report
+# ---------------------------------------------------------------------------
+@app.get("/vulnerabilities/coverage", response_model=list[VulnerabilityCoverage])
+def get_vulnerability_coverage(db: Session = Depends(get_db)) -> list[VulnerabilityCoverage]:
+    from sqlalchemy import case
+
+    rows = (
+        db.query(
+            EpisodeRecord.vulnerability_class,
+            func.count(EpisodeRecord.id).label("total"),
+            func.sum(case((EpisodeRecord.outcome == 1, 1), else_=0)).label("detected"),
+            func.sum(case((EpisodeRecord.outcome == 0, 1), else_=0)).label("secure"),
+        )
+        .filter(EpisodeRecord.vulnerability_class.isnot(None))
+        .group_by(EpisodeRecord.vulnerability_class)
+        .all()
+    )
+    result = []
+    for row in rows:
+        total = row.total or 0
+        detected = row.detected or 0
+        result.append(
+            VulnerabilityCoverage(
+                vulnerability_class=row.vulnerability_class,
+                total_episodes=total,
+                detected_count=detected,
+                secure_count=row.secure or 0,
+                coverage_rate=(total - detected) / total if total else 0.0,
+            )
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Episodes — stop (auth enforced when REQUIRE_AUTH=true)
+# ---------------------------------------------------------------------------
+@app.post("/episodes/{episode_id}/stop", response_model=EpisodeStopResponse)
+def stop_episode(
+    episode_id: str,
+    db: Session = Depends(get_db),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> EpisodeStopResponse:
+    ep = db.get(EpisodeRecord, episode_id)
+    if not ep:
+        raise HTTPException(404, "Episode not found")
+    if ep.status in ("completed", "failed"):
+        return EpisodeStopResponse(
+            episode_id=episode_id,
+            status=ep.status,
+            message=f"Episode already {ep.status}",
+        )
+    ep.status = "failed"
+    ep.error = "Stopped by user"
+    db.commit()
+    return EpisodeStopResponse(
+        episode_id=episode_id,
+        status="failed",
+        message="Episode stopped",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config — update settings (auth enforced when REQUIRE_AUTH=true)
+# ---------------------------------------------------------------------------
+@app.post("/config")
+def update_config(
+    body: ConfigUpdateRequest,
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> dict[str, object]:
+    updated: list[str] = []
+    if body.llm_model is not None:
+        updated.append(f"llm_model={body.llm_model}")
+    if body.k_factor is not None:
+        updated.append(f"k_factor={body.k_factor}")
+    if body.max_retries is not None:
+        updated.append(f"max_retries={body.max_retries}")
+    if body.use_react is not None:
+        updated.append(f"use_react={body.use_react}")
+    return {"status": "ok", "updated": updated or ["nothing"]}
 
 
 # ---------------------------------------------------------------------------
 # Training — Synchronous Run
 # ---------------------------------------------------------------------------
+# NOTE: this is a sync `def` endpoint, so FastAPI runs it in a threadpool —
+# it does not block the async event loop. For long-running jobs prefer the
+# TaskQueue/worker path (packages/api/task_queue.py + worker.py).
 @app.post("/training/run", response_model=TrainingRunResponse)
 def run_training_episode(
-    body: TrainingRunRequest, db: Session = Depends(get_db)
+    body: TrainingRunRequest,
+    db: Session = Depends(get_db),
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
 ) -> TrainingRunResponse:
     """Execute one co-evolutionary training episode (blocks until done)."""
     from ..agents.llm import build_client
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
-    elo_record = db.get(EloRecord, "global")
-    current_ratings = (
-        (elo_record.attacker_rating, elo_record.developer_rating)
-        if elo_record
-        else (1500.0, 1500.0)
-    )
-
-    latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-    prompt_version = latest_prompt.version if latest_prompt else 0
+    current_ratings = get_current_ratings(db)
+    prompt_version = get_prompt_version(db)
 
     settings = get_settings()
-    # Pick best available provider
-    if settings.groq_api_key:
-        provider, key = "groq", settings.groq_api_key
-    elif settings.anthropic_api_key:
-        provider, key = "anthropic", settings.anthropic_api_key
-    elif settings.openai_api_key:
-        provider, key = "openai", settings.openai_api_key
-    elif settings.huggingface_api_key:
-        provider, key = "huggingface", settings.huggingface_api_key
-    elif settings.openrouter_api_key:
-        provider, key = "openrouter", settings.openrouter_api_key
-    else:
-        provider, key = "mock", None
+    provider, key, model = resolve_llm_provider(settings)
 
-    llm = build_client(provider, settings.llm_model, api_key=key)
+    llm = build_client(provider, model, api_key=key)
 
     loop = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=body.use_react)
     config = EpisodeConfig(
@@ -256,47 +363,12 @@ def run_training_episode(
     )
     trace = loop.run_episode(config, current_ratings=current_ratings)
 
-    ep = EpisodeRecord(
-        id=trace.episode_id,
-        status="completed" if not trace.error else "failed",
+    persist_episode(
+        db,
+        trace=trace,
         vulnerability_class=body.vulnerability_class,
-        difficulty_tier=trace.difficulty_tier,
-        outcome=trace.judge_outcome,
-        task_description=trace.task.task_description if trace.task else "",
-        patch_text=trace.patch_text,
-        judge_verdict=trace.judge_verdict,
-        attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-        developer_rating=trace.elo_after.get("developer", current_ratings[1]),
-        prompt_version=trace.prompt_version,
-        error=trace.error or None,
+        current_ratings=current_ratings,
     )
-    db.add(ep)
-
-    if elo_record:
-        elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
-        elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
-        elo_record.episodes_played += 1
-    else:
-        db.add(EloRecord(
-            id="global",
-            attacker_rating=trace.elo_after.get("attacker", 1500.0),
-            developer_rating=trace.elo_after.get("developer", 1500.0),
-            episodes_played=1,
-        ))
-
-    if trace.distilled_rule and trace.regression_passed:
-        rule = trace.distilled_rule
-        db.add(RuleRecord(
-            rule_text=rule.rule_text,
-            vulnerability_class=rule.vulnerability_class,
-            source_pattern=rule.source_pattern,
-            recommended_fix=rule.recommended_fix,
-            source_trace_id=rule.source_trace_id,
-            prompt_version=trace.prompt_version,
-            approved=True,
-        ))
-
-    db.commit()
 
     return TrainingRunResponse(
         episode_id=trace.episode_id,
@@ -314,6 +386,66 @@ def run_training_episode(
     )
 
 
+def _job_to_read(job: TrainingJob, queue_position: int | None = None) -> TrainingJobRead:
+    return TrainingJobRead(
+        job_id=job.job_id,
+        status=job.status.value,
+        vulnerability_class=job.vulnerability_class,
+        language=job.language,
+        context_hint=job.context_hint,
+        max_retries=job.max_retries,
+        use_react=job.use_react,
+        queue_position=queue_position,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        result=job.result,
+        error=job.error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Training — Async Jobs (non-blocking; processed by worker.py)
+# ---------------------------------------------------------------------------
+# NOTE: with the in-memory queue backend this only works single-process.
+# Multi-process deployments (uvicorn --workers + separate worker) require
+# REDIS_URL so the API and worker share queue state.
+@app.post("/training/jobs", response_model=TrainingJobRead, status_code=202)
+def enqueue_training_job(
+    body: TrainingJobEnqueueRequest,
+    _auth: APIKey | None = Depends(require_api_key_if_enabled),
+) -> TrainingJobRead:
+    """Enqueue a training episode and return immediately (202 Accepted)."""
+    queue = get_task_queue()
+    job = queue.enqueue(
+        TrainingJob(
+            vulnerability_class=body.vulnerability_class,
+            language=body.language,
+            context_hint=body.context_hint,
+            max_retries=body.max_retries,
+            use_react=body.use_react,
+        )
+    )
+    return _job_to_read(job, queue_position=queue.queue_length())
+
+
+@app.get("/training/jobs", response_model=list[TrainingJobRead])
+def list_training_jobs(
+    limit: int = Query(50, ge=1, le=200),
+) -> list[TrainingJobRead]:
+    """List recent training jobs (newest first)."""
+    return [_job_to_read(j) for j in get_task_queue().list_jobs(limit=limit)]
+
+
+@app.get("/training/jobs/{job_id}", response_model=TrainingJobRead)
+def get_training_job(job_id: str) -> TrainingJobRead:
+    """Poll a training job's status and result."""
+    job = get_task_queue().get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return _job_to_read(job)
+
+
 # ---------------------------------------------------------------------------
 # Training — SSE Stream (real-time progress)
 # ---------------------------------------------------------------------------
@@ -329,33 +461,16 @@ async def training_stream(
     from ..agents.training_loop import EpisodeConfig, TrainingLoop
 
     async def event_generator():
-        from .database import get_session_factory
-
-        factory = get_session_factory()
-        db = factory()
+        db = get_session_factory()()
 
         try:
-            elo_record = db.get(EloRecord, "global")
-            current_ratings = (
-                (elo_record.attacker_rating, elo_record.developer_rating)
-                if elo_record
-                else (1500.0, 1500.0)
-            )
-
-            latest_prompt = db.query(PromptRecord).order_by(PromptRecord.version.desc()).first()
-            prompt_version = latest_prompt.version if latest_prompt else 0
+            current_ratings = get_current_ratings(db)
+            prompt_version = get_prompt_version(db)
 
             settings = get_settings()
-            if settings.groq_api_key:
-                provider, key = "groq", settings.groq_api_key
-            elif settings.anthropic_api_key:
-                provider, key = "anthropic", settings.anthropic_api_key
-            elif settings.openai_api_key:
-                provider, key = "openai", settings.openai_api_key
-            else:
-                provider, key = "mock", None
+            provider, key, model = resolve_llm_provider(settings)
 
-            llm = build_client(provider, settings.llm_model, api_key=key)
+            llm = build_client(provider, model, api_key=key)
             config = EpisodeConfig(
                 vulnerability_class=vulnerability_class,
                 language=language,
@@ -366,24 +481,54 @@ async def training_stream(
             yield f"data: {json.dumps({'type': 'start', 'vuln': vulnerability_class, 'lang': language, 'elo': list(current_ratings)})}\n\n"
             await asyncio.sleep(0.1)
 
-            # Run in thread pool
+            # Run blocking training loop in a threadpool; do not hold the
+            # DB connection open longer than needed — persist after completion.
             loop_inst = TrainingLoop(llm=llm, prompt_version=prompt_version, use_react=True)
 
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(loop_inst.run_episode, config, current_ratings=current_ratings)
-                trace = await asyncio.get_event_loop().run_in_executor(None, future.result)
+            trace = await asyncio.to_thread(
+                loop_inst.run_episode, config, current_ratings=current_ratings
+            )
 
             outcome_text = "SECURE" if trace.judge_outcome == 0 else "VULNERABLE"
 
             steps = [
-                {"type": "agent", "agent": "attacker", "status": "done", "message": f"Task generated (tier {trace.difficulty_tier}/10)"},
-                {"type": "agent", "agent": "developer", "status": "done", "message": f"Patch built ({len(trace.patch_text)} chars)"},
-                {"type": "agent", "agent": "judge", "status": "done", "message": f"Outcome: {outcome_text}"},
+                {
+                    "type": "agent",
+                    "agent": "attacker",
+                    "status": "done",
+                    "message": f"Task generated (tier {trace.difficulty_tier}/10)",
+                },
+                {
+                    "type": "agent",
+                    "agent": "developer",
+                    "status": "done",
+                    "message": f"Patch built ({len(trace.patch_text)} chars)",
+                },
+                {
+                    "type": "agent",
+                    "agent": "judge",
+                    "status": "done",
+                    "message": f"Outcome: {outcome_text}",
+                },
             ]
             if trace.distilled_rule and trace.regression_passed:
-                steps.append({"type": "agent", "agent": "distiller", "status": "done", "message": f"Rule: {trace.distilled_rule.rule_text[:80]}"})
+                steps.append(
+                    {
+                        "type": "agent",
+                        "agent": "distiller",
+                        "status": "done",
+                        "message": f"Rule: {trace.distilled_rule.rule_text[:80]}",
+                    }
+                )
             else:
-                steps.append({"type": "agent", "agent": "distiller", "status": "skip", "message": "No rule distilled"})
+                steps.append(
+                    {
+                        "type": "agent",
+                        "agent": "distiller",
+                        "status": "skip",
+                        "message": "No rule distilled",
+                    }
+                )
 
             for step in steps:
                 yield f"data: {json.dumps(step)}\n\n"
@@ -391,48 +536,13 @@ async def training_stream(
 
             yield f"data: {json.dumps({'type': 'elo', 'before': trace.elo_before, 'after': trace.elo_after})}\n\n"
 
-            # Persist
-            ep = EpisodeRecord(
-                id=trace.episode_id,
-                status="completed" if not trace.error else "failed",
+            # Persist via shared helper (single source of truth)
+            persist_episode(
+                db,
+                trace=trace,
                 vulnerability_class=vulnerability_class,
-                difficulty_tier=trace.difficulty_tier,
-                outcome=trace.judge_outcome,
-                task_description=trace.task.task_description if trace.task else "",
-                patch_text=trace.patch_text,
-                judge_verdict=trace.judge_verdict,
-                attacker_rating=trace.elo_after.get("attacker", current_ratings[0]),
-                developer_rating=trace.elo_after.get("developer", current_ratings[1]),
-                prompt_version=trace.prompt_version,
-                error=trace.error or None,
+                current_ratings=current_ratings,
             )
-            db.add(ep)
-
-            if elo_record:
-                elo_record.attacker_rating = trace.elo_after.get("attacker", elo_record.attacker_rating)
-                elo_record.developer_rating = trace.elo_after.get("developer", elo_record.developer_rating)
-                elo_record.episodes_played += 1
-            else:
-                db.add(EloRecord(
-                    id="global",
-                    attacker_rating=trace.elo_after.get("attacker", 1500.0),
-                    developer_rating=trace.elo_after.get("developer", 1500.0),
-                    episodes_played=1,
-                ))
-
-            if trace.distilled_rule and trace.regression_passed:
-                rule = trace.distilled_rule
-                db.add(RuleRecord(
-                    rule_text=rule.rule_text,
-                    vulnerability_class=rule.vulnerability_class,
-                    source_pattern=rule.source_pattern,
-                    recommended_fix=rule.recommended_fix,
-                    source_trace_id=rule.source_trace_id,
-                    prompt_version=trace.prompt_version,
-                    approved=True,
-                ))
-
-            db.commit()
 
             yield f"data: {json.dumps({'type': 'complete', 'episode_id': trace.episode_id, 'outcome': trace.judge_outcome, 'rule_distilled': trace.distilled_rule is not None and trace.regression_passed, 'duration_s': trace.duration_s})}\n\n"
 
@@ -444,5 +554,9 @@ async def training_stream(
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

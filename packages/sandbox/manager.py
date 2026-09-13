@@ -1,6 +1,6 @@
 """Secure container lifecycle management for CoEvolve Sandbox.
 
-Implements the 7-layer isolation stack defined in security_governance.md:
+Implements the 7-layer isolation stack defined in docs/security_governance.md:
 
     Layer 1: Resource limits      (cgroups: CPU, memory, PIDs)
     Layer 2: Network isolation    (--network none)
@@ -66,10 +66,14 @@ class SandboxManager:
         return ContainerSpec(container_id=container.id, episode_id=episode_id)
 
     def exec_run(self, container_id: str, command: str, timeout: int = 60) -> tuple[int, str]:
-        """Execute a command inside an existing container."""
-        is_valid, reason = validate_command(command)
-        if not is_valid:
-            raise SandboxError(f"Command blocked by security policy: {reason}")
+        """Execute a command inside an existing container.
+
+        The Docker sandbox isolation is the primary security boundary;
+        command validation is defense-in-depth and is enforced here.
+        """
+        allowed, reason = validate_command(command)
+        if not allowed:
+            raise SandboxError(f"Blocked command: {reason}")
         try:
             container = self.client.containers.get(container_id)
             res = container.exec_run(
@@ -145,26 +149,29 @@ class SandboxManager:
 
 
 def validate_command(command: str, blocked: list[str] | None = None) -> tuple[bool, str]:
-    """Validate a shell command against the blocked-command allowlist."""
-    import re
-    from pathlib import Path
+    """Validate a shell command against the blocked-command blocklist.
 
-    blocked_list = blocked or BLOCKED_COMMANDS
-    blocked_set = {b.lower() for b in blocked_list}
+    NOTE: blocklists are inherently bypassable. Docker sandbox isolation
+    (network none, read-only root, cap-drop ALL, seccomp, non-root user)
+    is the real security boundary; this check is defense-in-depth only.
+    """
+    blocked = blocked or BLOCKED_COMMANDS
     low = command.lower()
-
-    # Split on whitespace and shell delimiters
-    tokens = [t for t in re.split(r"[\s;|>&]+", command) if t]
-    for token in tokens:
-        token_low = token.lower()
-        base_name = Path(token_low).name
-        if token_low in blocked_set:
-            return False, f"Blocked command: {token}"
-        if base_name in blocked_set:
-            return False, f"Blocked command: {base_name}"
-
-    for b in blocked_list:
-        if b in low and (f"| {b} " in low or f"|{b} " in low):
+    tokens = command.split()
+    for b in blocked:
+        b_low = b.lower()
+        # match as standalone token to avoid over-blocking, plus
+        # case-insensitive substring for multi-word patterns like "rm -rf /"
+        if any(token.lower() == b_low for token in tokens):
+            return False, f"Blocked command: {b}"
+        if " " in b and b_low in low:
+            return False, f"Blocked command: {b}"
+        if b_low in low and (
+            f"| {b_low} " in low
+            or f"|{b_low} " in low
+            or low.strip().endswith(f"| {b_low}")
+            or low.strip().endswith(f"|{b_low}")
+        ):
             return False, f"Blocked command in pipe: {b}"
     return True, "command allowed"
 

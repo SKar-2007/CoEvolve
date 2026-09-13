@@ -26,7 +26,12 @@ secrets/
 data/artifacts/
 *.log
 logs/
-test_coevolve.db
+*.db
+*_report.json
+stress_test_*.json
+
+# Runtime episode artifacts (local runs only)
+episodes/
 
 # IDE
 .idea/

@@ -215,6 +215,83 @@ def create_open_redirect_app() -> Flask:
     return app
 
 
+def create_deserialization_app() -> Flask:
+    """Insecure Deserialization vulnerable app (YAML pickle)."""
+    app = Flask(__name__)
+
+    @app.route("/")
+    def index():
+        return "<h1>Deserialization Test App</h1><p>Use /load (POST body= YAML)</p>"
+
+    @app.route("/load", methods=["POST"])
+    def load_data():
+        import yaml  # type: ignore[import-not-found]
+
+        raw = request.get_data(as_text=True)
+        # VULNERABLE: arbitrary YAML deserialization
+        try:
+            data = yaml.load(raw, Loader=yaml.FullLoader)
+            return jsonify({"loaded": str(data)})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
+    return app
+
+
+def create_xxe_app() -> Flask:
+    """XML External Entity vulnerable app."""
+    app = Flask(__name__)
+
+    @app.route("/")
+    def index():
+        return "<h1>XXE Test App</h1><p>Use /parse (POST body= XML)</p>"
+
+    @app.route("/parse", methods=["POST"])
+    def parse_xml():
+        from xml.etree.ElementTree import fromstring  # nosec
+
+        raw = request.get_data(as_text=True)
+        # VULNERABLE: no defusing of external entities
+        try:
+            root = fromstring(raw)
+            text = root.find(".//").text if root.find(".//") is not None else ""
+            return f"<pre>{text}</pre>"
+        except Exception as e:
+            return f"Error: {e}", 400
+
+    return app
+
+
+def create_prototype_pollution_app() -> Flask:
+    """Prototype Pollution vulnerable app (Python dict merge)."""
+    app = Flask(__name__)
+
+    @app.route("/")
+    def index():
+        return "<h1>Prototype Pollution Test App</h1><p>Use /merge (POST JSON)</p>"
+
+    def deep_merge(base: dict, override: dict) -> dict:
+        # VULNERABLE: no __proto__ / constructor check
+        for key, value in override.items():
+            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                deep_merge(base[key], value)
+            else:
+                base[key] = value
+        return base
+
+    @app.route("/merge", methods=["POST"])
+    def merge():
+        import json
+
+        data = json.loads(request.get_data(as_text=True))
+        base = {"user": "guest", "role": "viewer"}
+        result = deep_merge(base, data)
+        # If __proto__.isAdmin was set, it leaks into response
+        return jsonify(result)
+
+    return app
+
+
 APP_REGISTRY = {
     "SQLi": create_sqli_app,
     "PathTraversal": create_path_traversal_app,
@@ -223,6 +300,9 @@ APP_REGISTRY = {
     "SSTI": create_ssti_app,
     "SSRF": create_ssrf_app,
     "OpenRedirect": create_open_redirect_app,
+    "Deserialization": create_deserialization_app,
+    "XXE": create_xxe_app,
+    "PrototypePollution": create_prototype_pollution_app,
 }
 
 

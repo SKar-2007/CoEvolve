@@ -1,0 +1,21 @@
+{
+  "task": {
+    "id": "task-001",
+    "vulnerability_class": "SQLi",
+    "description": "Fix SQL injection in user query endpoint",
+    "difficulty_tier": 3
+  },
+  "patch": {
+    "id": "patch-001",
+    "files_modified": ["app/db.py"],
+    "lines_added": 5,
+    "lines_removed": 2
+  },
+  "evaluation": {
+    "score": 1,
+    "reasoning": "Patch successfully parameterizes the SQL query",
+    "vulnerability_fixed": true,
+    "new_issues_introduced": false,
+    "code_quality": "Good"
+  }
+}

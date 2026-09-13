@@ -16,9 +16,23 @@ services:
       - "${API_PORT:-8000}:8000"
     env_file: .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-coevolve}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-coevolve}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-coevolve}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-coevolve}
       - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS must be set in .env (comma-separated origins)}
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
+      # P0: persisted keys shared across workers + bootstrap admin credential.
+      # Generate with: python -c "import secrets; print('cov_' + secrets.token_urlsafe(32))"
+      - API_KEY_STORE=${API_KEY_STORE:-db}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+    security_opt:
+      - no-new-privileges:true
     volumes:
+      # SECURITY: docker.sock mount = full Docker daemon control over the host.
+      # Required for the sandbox feature (spawning per-episode containers).
+      # Mitigations applied: explicit secrets validation above, no-new-privileges,
+      # resource limits, non-root app user (see docker/api/Dockerfile).
+      # Stronger alternatives: rootless Docker daemon, or a dedicated Docker
+      # host reached over TLS instead of the local socket.
       - /var/run/docker.sock:/var/run/docker.sock
       - prompt_store:/app/.prompt_store
     depends_on:
@@ -37,7 +51,7 @@ services:
           cpus: "0.5"
           memory: 512M
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,7 +68,7 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-coevolve}
       - POSTGRES_USER=${POSTGRES_USER:-coevolve}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -134,7 +148,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set in .env}
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/coevolve.json
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
     depends_on:

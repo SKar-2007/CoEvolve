@@ -1,0 +1,82 @@
+{
+  "SQLi": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 1,
+    "rule_ids": ["sqli-001"],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "XSS": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 1,
+    "rule_ids": ["xss-001"],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "PathTraversal": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 1,
+    "rule_ids": ["path-traversal-001"],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "CommandInjection": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "SSRF": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "Deserialization": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "SSTI": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "XXE": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "OpenRedirect": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  },
+  "PrototypePollution": {
+    "detection_rate": 0.0,
+    "mitigation_rate": 0.0,
+    "rules_count": 0,
+    "rule_ids": [],
+    "test_cases": 0,
+    "episodes_tested": 0
+  }
+}

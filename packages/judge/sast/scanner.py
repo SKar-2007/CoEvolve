@@ -64,7 +64,11 @@ class SemgrepScanner:
         self.binary = binary
 
     def scan_directory(self, target: Path, config: str | None = None) -> SASTResult:
-        """Scan a directory with the bundled rules; return structured findings."""
+        """Scan a directory with the bundled rules; return structured findings.
+
+        Falls back to scan_patch() heuristic if the semgrep binary is not
+        installed (e.g. on Windows dev machines without semgrep in PATH).
+        """
         rules = config or str(self.rules_dir)
         cmd = [
             self.binary,
@@ -76,10 +80,21 @@ class SemgrepScanner:
             "--no-rewrite-rule-ids",
             str(target),
         ]
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=self.timeout, check=False
-        )
-        return self._parse(proc.stdout)
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=self.timeout, check=False
+            )
+            return self._parse(proc.stdout)
+        except FileNotFoundError:
+            # semgrep not in PATH — fall back to patch-text heuristic
+            patch_text = ""
+            for py_file in Path(target).rglob("*.py"):
+                try:
+                    patch_text += py_file.read_text(errors="replace") + "\n"
+                except OSError:
+                    pass
+            return self.scan_patch(patch_text)
+
 
     def scan_patch(self, patch_text: str, syntax: str = "python") -> SASTResult:
         """Scan a code patch string directly (best-effort heuristic).

@@ -79,13 +79,20 @@ Keep context_files snippets SHORT (max 5 lines each). Be concise.
 
 
 def _robust_json_load(text: str) -> dict:
-    """Parse JSON with multiple fallback repair strategies."""
-    import ast
+    """Parse JSON with fallback repair strategies.
+
+    NOTE: deliberately does NOT use ast.literal_eval — LLM output is
+    untrusted and literal_eval on attacker-controlled text widens the
+    parsing surface. The JSON-only repairs below are sufficient.
+    """
 
     # 1. Direct parse
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        raise ValueError("LLM JSON must be an object")
+    except (json.JSONDecodeError, ValueError):
         pass
 
     # 2. Fix unescaped newlines inside string values
@@ -98,7 +105,7 @@ def _robust_json_load(text: str) -> dict:
                 result.append(ch)
                 escape_next = False
                 continue
-            if ch == '\\':
+            if ch == "\\":
                 result.append(ch)
                 escape_next = True
                 continue
@@ -106,32 +113,30 @@ def _robust_json_load(text: str) -> dict:
                 in_string = not in_string
                 result.append(ch)
                 continue
-            if in_string and ch == '\n':
-                result.append('\\n')
+            if in_string and ch == "\n":
+                result.append("\\n")
                 continue
             result.append(ch)
-        return ''.join(result)
+        return "".join(result)
 
     fixed = _escape_newlines_in_strings(text)
     try:
-        return json.loads(fixed)
-    except json.JSONDecodeError:
+        parsed = json.loads(fixed)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
         pass
 
-    # 3. Fix single quotes + trailing commas
+    # 3. Fix single quotes + trailing commas (last resort, still JSON-only)
     fixed = text.replace("'", '"')
     fixed = re.sub(r",\s*}", "}", fixed)
     fixed = re.sub(r",\s*]", "]", fixed)
     fixed = _escape_newlines_in_strings(fixed)
     try:
-        return json.loads(fixed)
-    except json.JSONDecodeError:
-        pass
-
-    # 4. ast.literal_eval (handles Python dicts)
-    try:
-        return ast.literal_eval(text)
-    except Exception:
+        parsed = json.loads(fixed)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
         pass
 
     raise ValueError(f"Cannot parse LLM output as JSON: {text[:200]}")
@@ -195,7 +200,7 @@ class AttackerAgent:
 
         user = self._build_user_prompt(vulnerability_class, difficulty_tier, context_hint, language)
         last_err = None
-        for attempt in range(3):
+        for _attempt in range(3):
             resp = self.client.generate(
                 system=ATTACKER_SYSTEM_PROMPT,
                 user=user,

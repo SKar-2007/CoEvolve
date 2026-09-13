@@ -1,0 +1,88 @@
+rules:
+  - id: hardcoded-secret
+    pattern: |
+      $VAR = "..."
+      ...
+    message: |
+      Possible hardcoded secret or credential. Use environment variables or a secrets manager.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: sql-injection
+    pattern: |
+      $CURSOR.execute("..." + $INPUT)
+      ...
+    message: |
+      String concatenation in SQL query may lead to SQL injection. Use parameterized queries.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: debug-true-in-production
+    pattern: |
+      DEBUG = True
+    message: |
+      DEBUG mode should not be enabled in production.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: unsafe-yaml-load
+    patterns:
+      - pattern: yaml.load(...)
+    message: |
+      yaml.load() without Loader is unsafe. Use yaml.safe_load() or specify Loader=yaml.SafeLoader.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: subprocess-shell-true
+    pattern: subprocess.call(..., shell=True, ...)
+    message: |
+      subprocess with shell=True can be dangerous. Avoid shell=True or validate input.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: eval-usage
+    pattern: eval(...)
+    message: |
+      eval() executes arbitrary code. Avoid using eval() or use ast.literal_eval() for data.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      technology: [python]
+
+  - id: dockerfile-add-curl
+    pattern: |
+      RUN curl ...
+    message: |
+      Downloading files in Dockerfile with curl is not reproducible. Pin versions and verify checksums.
+    languages: [dockerfile]
+    severity: WARNING
+    metadata:
+      category: security
+      technology: [docker]
+
+  - id: dockerfile-expose-privileged
+    pattern: |
+      EXPOSE ...
+    message: |
+      Review exposed ports - only expose necessary services.
+    languages: [dockerfile]
+    severity: INFO
+    metadata:
+      category: security
+      technology: [docker]

@@ -1,0 +1,17 @@
+{
+  "episode_id": "ep-20260912-example",
+  "created_at": "2026-09-12T00:00:00Z",
+  "status": "completed",
+  "config": {
+    "vulnerability_class": "SQLi",
+    "difficulty_tier": 3,
+    "max_steps": 10,
+    "timeout_seconds": 300
+  },
+  "agents": {
+    "attacker": "attacker-v1",
+    "developer": "developer-v1",
+    "judge": "judge-v1"
+  },
+  "prompt_version": 1
+}

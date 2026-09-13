@@ -1,4 +1,6 @@
 # Core runtime dependencies for CoEvolve API (Render free tier)
+# Single source of truth mirror of pyproject.toml [project] dependencies.
+# Keep both files in sync.
 
 fastapi>=0.111
 uvicorn[standard]>=0.30

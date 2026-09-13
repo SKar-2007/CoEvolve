@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -34,6 +35,7 @@ class TrainingJob:
     language: str = "python"
     context_hint: str = ""
     max_retries: int = 3
+    use_react: bool = False
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     completed_at: float | None = None
@@ -151,18 +153,68 @@ class TaskQueue:
         return len(self._memory_queue)
 
     def list_jobs(self, limit: int = 50) -> list[TrainingJob]:
-        """List recent jobs."""
+        """List recent jobs (uses SCAN, never blocking KEYS)."""
         if self._redis:
-            keys = self._redis.keys(f"{self.STATUS_PREFIX}*")
             jobs: list[TrainingJob] = []
-            for key in keys[-limit:]:
-                job_id = key.replace(self.STATUS_PREFIX, "")
-                job = self.get_job(job_id)
-                if job:
-                    jobs.append(job)
+            try:
+                cursor: int = 0
+                seen = 0
+                while True:
+                    cursor, keys = self._redis.scan(
+                        cursor=cursor, match=f"{self.STATUS_PREFIX}*", count=100
+                    )
+                    for key in keys:
+                        if seen >= limit * 2:  # bound work; final sort+slice applies limit
+                            break
+                        job_id = key.replace(self.STATUS_PREFIX, "")
+                        job = self.get_job(job_id)
+                        if job:
+                            jobs.append(job)
+                        seen += 1
+                    if cursor == 0:
+                        break
+            except Exception:
+                logger.warning("Redis SCAN failed in list_jobs", exc_info=True)
             return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
         return sorted(
             self._memory_results.values(),
             key=lambda j: j.created_at,
             reverse=True,
         )[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Shared singleton — one queue per process, built from settings
+# ---------------------------------------------------------------------------
+
+_queue: TaskQueue | None = None
+_queue_lock = threading.Lock()
+
+
+def get_task_queue() -> TaskQueue:
+    """Return the process-wide task queue.
+
+    Uses ``REDIS_URL`` (or ``UPSTASH_REDIS_URL`` fallback) when configured so
+    the API and ``worker.py`` share state; otherwise an in-memory queue.
+    NOTE: the in-memory backend only works single-process — multi-process
+    deployments (uvicorn ``--workers`` + separate worker) require Redis.
+    """
+    global _queue
+    if _queue is None:
+        with _queue_lock:
+            if _queue is None:
+                try:
+                    from .config import get_settings
+
+                    redis_url = get_settings().resolved_redis_url or None
+                except Exception:
+                    redis_url = None
+                _queue = TaskQueue(redis_url=redis_url)
+    return _queue
+
+
+def reset_task_queue() -> None:
+    """Reset the singleton (for testing)."""
+    global _queue
+    with _queue_lock:
+        _queue = None

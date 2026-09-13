@@ -1,0 +1,6 @@
+rules:
+  - path: semgrep-rules
+    excludes:
+      - "*"
+    options:
+      generic_ellipsis_max_span: 50
