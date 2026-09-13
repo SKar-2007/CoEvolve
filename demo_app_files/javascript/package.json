@@ -1,0 +1,9 @@
+{
+  "name": "coevolve-vulnerable-js-apps",
+  "version": "1.0.0",
+  "description": "Vulnerable Node.js apps for DAST exploit replay",
+  "main": "vulnerable_app_js.js",
+  "scripts": {
+    "start": "node vulnerable_app_js.js --all --port 3000"
+  }
+}

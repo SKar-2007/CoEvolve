@@ -410,35 +410,148 @@ async def upload_and_scan(
     vulnerability_class: str = Query("SQLi"),
     _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
 ) -> dict:
-    """Upload code files, scan with SAST, and return findings."""
-    import tempfile, shutil
+    """Upload code files, scan with SAST, and return detailed findings."""
+    import tempfile
+    import time
+    from collections import Counter, defaultdict
+    from datetime import datetime, timezone
     from pathlib import Path
-    from ..judge.sast.scanner import SemgrepScanner
+    from ..judge.sast.scanner import SemgrepScanner, VULN_METADATA
+
+    if not files:
+        return {"total_findings": 0, "files": [], "findings": [], "summary": {}, "scan_info": {}, "recommendations": [], "error": "No files provided"}
 
     scanner = SemgrepScanner()
-    all_findings = []
-    file_summaries = []
+    start = time.time()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for upload in files:
-            content = await upload.read()
-            file_path = Path(tmpdir) / (upload.filename or "upload.py")
-            file_path.write_bytes(content)
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            uploaded: list[dict] = []
+            for upload in files:
+                content = await upload.read()
+                raw_name = upload.filename or "upload.py"
+                safe_name = raw_name.lstrip("/\\")
+                file_path = tmp_path / safe_name
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_bytes(content)
+                # detect language from extension
+                ext = Path(safe_name).suffix.lower()
+                lang = {".py": "python", ".js": "javascript", ".ts": "typescript", ".java": "java"}.get(ext, ext.lstrip(".") or "unknown")
+                uploaded.append({"filename": safe_name, "size": len(content), "tmp_path": file_path, "language": lang, "ext": ext})
 
-            result = scanner.scan_directory(file_path.parent)
-            findings = [f.as_dict() for f in result.findings]
-            all_findings.extend(findings)
-            file_summaries.append({
-                "filename": upload.filename,
-                "size": len(content),
-                "findings_count": len(findings),
-            })
+            result = scanner.scan_directory(tmp_path)
+            duration_ms = int((time.time() - start) * 1000)
+            all_findings: list[dict] = []
+            for f in result.findings:
+                d = f.as_dict()
+                try:
+                    rel = str(Path(d["file"]).relative_to(tmp_path))
+                except Exception:
+                    rel = Path(d["file"]).name
+                d["file"] = rel
+                # add language
+                d["language"] = {".py": "python", ".js": "javascript", ".ts": "typescript", ".java": "java"}.get(Path(rel).suffix.lower(), "unknown")
+                all_findings.append(d)
 
-    return {
-        "total_findings": len(all_findings),
-        "files": file_summaries,
-        "findings": all_findings,
-    }
+            # Per-file summaries
+            file_summaries = []
+            for info in uploaded:
+                fname = info["filename"]
+                file_findings = [f for f in all_findings if f["file"] == fname]
+                # severity breakdown per file
+                sev_counts = Counter(f["severity"] for f in file_findings)
+                file_summaries.append({
+                    "filename": fname,
+                    "size": info["size"],
+                    "language": info["language"],
+                    "findings_count": len(file_findings),
+                    "severity_counts": dict(sev_counts),
+                    "risk": "High" if any(f["severity"] == "ERROR" for f in file_findings) else ("Medium" if file_findings else "Low"),
+                })
+
+            # Summary aggregates
+            by_class = dict(Counter(f["rule_id"] for f in all_findings))
+            by_severity = dict(Counter(f["severity"] for f in all_findings))
+            by_confidence = dict(Counter(f["confidence"] for f in all_findings))
+            by_file = {info["filename"]: len([f for f in all_findings if f["file"] == info["filename"]]) for info in uploaded}
+            by_language = dict(Counter(info["language"] for info in uploaded))
+            by_risk = dict(Counter(f.get("risk", f["severity"]) for f in all_findings))
+            # Languages with findings
+            langs_with_findings = dict(Counter(f["language"] for f in all_findings))
+
+            total = len(all_findings)
+            critical = by_severity.get("ERROR", 0)
+            warning = by_severity.get("WARNING", 0)
+            # Risk score 0-100: weighted
+            risk_score = min(100, critical * 10 + warning * 3 + len(by_class) * 5) if total else 0
+            risk_level = "Critical" if risk_score >= 70 else "High" if risk_score >= 40 else "Medium" if risk_score >= 10 else "Low"
+
+            # Recommendations grouped by class
+            grouped: dict[str, list[dict]] = defaultdict(list)
+            for f in all_findings:
+                grouped[f["rule_id"]].append(f)
+            recommendations = []
+            priority_order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+            for rule_id, items in grouped.items():
+                meta = VULN_METADATA.get(rule_id, {})
+                recommendations.append({
+                    "rule_id": rule_id,
+                    "title": meta.get("title", rule_id),
+                    "cwe": meta.get("cwe", ""),
+                    "owasp": meta.get("owasp", ""),
+                    "severity": meta.get("severity", items[0]["severity"]),
+                    "risk": meta.get("risk", "Medium"),
+                    "count": len(items),
+                    "fix": meta.get("fix", ""),
+                    "files_affected": sorted(set(f["file"] for f in items)),
+                    "example": items[0]["message"][:120],
+                })
+            recommendations.sort(key=lambda r: (priority_order.get(r["risk"], 99), -r["count"]))
+
+            scan_info = {
+                "duration_ms": duration_ms,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "files_scanned": len(uploaded),
+                "total_bytes": sum(i["size"] for i in uploaded),
+                "languages_detected": sorted(set(i["language"] for i in uploaded)),
+                "rules_used": len(list(scanner.rules_dir.glob("*.yml"))),
+            }
+
+            summary = {
+                "total_findings": total,
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "by_class": by_class,
+                "by_severity": by_severity,
+                "by_confidence": by_confidence,
+                "by_file": by_file,
+                "by_language": by_language,
+                "by_risk": by_risk,
+                "langs_with_findings": langs_with_findings,
+                "critical_count": critical,
+                "warning_count": warning,
+                "files_affected": len([f for f in file_summaries if f["findings_count"] > 0]),
+            }
+
+            return {
+                "total_findings": len(all_findings),
+                "files": file_summaries,
+                "findings": all_findings,
+                "summary": summary,
+                "scan_info": scan_info,
+                "recommendations": recommendations,
+            }
+    except Exception as e:
+        return {
+            "total_findings": 0,
+            "files": [],
+            "findings": [],
+            "summary": {},
+            "scan_info": {},
+            "recommendations": [],
+            "error": f"Scan failed: {str(e)}",
+        }
 
 
 def _job_to_read(job: TrainingJob, queue_position: Optional[int] = None) -> TrainingJobRead:
