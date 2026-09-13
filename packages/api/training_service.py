@@ -5,6 +5,8 @@ so all entry points behave identically.
 """
 
 from __future__ import annotations
+from typing import Optional
+
 
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,7 @@ from .config import Settings
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
 
-def resolve_llm_provider(settings: Settings) -> tuple[str, str | None, str]:
+def resolve_llm_provider(settings: Settings) -> Optional[tuple[str, str], str]:
     """Pick best available LLM provider. Returns (provider, api_key, model)."""
     if settings.groq_api_key:
         return "groq", settings.groq_api_key, settings.llm_model
@@ -44,7 +46,7 @@ def _provider_key(settings: Settings, provider: str) -> str:
     }.get(provider, "")
 
 
-def resolve_small_llm_provider(settings: Settings) -> tuple[str, str | None, str] | None:
+def resolve_small_llm_provider(settings: Settings) -> Optional[Optional[tuple[str, Optional[str], str]]]:
     """Resolve the optional distillation client.
 
     Returns None when SMALL_LLM_MODEL is unset (caller must fall back to the

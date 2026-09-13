@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for the CoEvolve Sandbox API."""
 
 import uuid
+from typing import Optional
+
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -46,21 +48,21 @@ class EpisodeRecord(Base):
         ),
         default="pending",
     )
-    vulnerability_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    difficulty_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    outcome: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    task_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    patch_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    exploit_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
-    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    judge_verdict: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    vulnerability_class: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    difficulty_tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    outcome: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    task_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    exploit_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    container_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    judge_verdict: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
     attacker_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     developer_rating: Mapped[float] = mapped_column(Float, default=1500.0)
     prompt_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PromptRecord(Base):
@@ -71,7 +73,7 @@ class PromptRecord(Base):
     base_prompt: Mapped[str] = mapped_column(Text, default="")
     rules: Mapped[list] = mapped_column(JSON, default=list)
     commit_message: Mapped[str] = mapped_column(Text, default="")
-    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

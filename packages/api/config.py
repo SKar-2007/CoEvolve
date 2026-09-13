@@ -1,6 +1,8 @@
 """Application configuration via pydantic-settings."""
 
 from __future__ import annotations
+from typing import Optional
+
 
 from functools import lru_cache
 
@@ -39,9 +41,9 @@ class Settings(BaseSettings):
 
     # Per-role sampling temperatures (unset = ModelConfig tuned defaults:
     # attacker 0.9, developer 0.4, distiller 0.0).
-    attacker_temperature: float | None = None
-    developer_temperature: float | None = None
-    distiller_temperature: float | None = None
+    attacker_temperature: Optional[float] = None
+    developer_temperature: Optional[float] = None
+    distiller_temperature: Optional[float] = None
 
     # Optional fallback providers
     anthropic_api_key: str = ""

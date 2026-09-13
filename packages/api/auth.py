@@ -17,7 +17,7 @@ import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class APIKeyStore:
             self._keys[api_key.key_hash] = api_key
         return api_key
 
-    def validate(self, key: str) -> APIKey | None:
+    def validate(self, key: str) -> Optional[APIKey]:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
         with self._lock:
             api_key = self._keys.get(key_hash)
@@ -88,7 +88,7 @@ class APIKeyStore:
         with self._lock:
             return list(self._keys.values())
 
-    def get_key(self, key: str) -> APIKey | None:
+    def get_key(self, key: str) -> Optional[APIKey]:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
         with self._lock:
             return self._keys.get(key_hash)
@@ -138,7 +138,7 @@ class DBAPIKeyStore:
         logger.info("Created API key %r (tier=%s)", name, tier)
         return APIKey(key=key, name=name, tier=tier)
 
-    def validate(self, key: str) -> APIKey | None:
+    def validate(self, key: str) -> Optional[APIKey]:
         from .models import ApiKeyRecord
 
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
@@ -455,7 +455,7 @@ class RedisRateLimiter:
             _alert_limiter_outage()
             return True, fallback
 
-    def reset(self, identifier: str | None = None) -> None:
+    def reset(self, identifier: Optional[str] = None) -> None:
         """Clear windows (all, or one identifier). Used by tests/ops."""
         try:
             if identifier is not None:
@@ -522,9 +522,9 @@ def reset_rate_limiter() -> None:
 
 async def get_api_key(
     request: Request,
-    api_key_header: str | None = Security(API_KEY_HEADER),
-    api_key_query: str | None = Security(API_KEY_QUERY),
-) -> APIKey | None:
+    api_key_header: Optional[str] = Security(API_KEY_HEADER),
+    api_key_query: Optional[str] = Security(API_KEY_QUERY),
+) -> Optional[APIKey]:
     """Extract and validate API key from header or query param.
 
     Returns None for unauthenticated requests (allows public endpoints).
@@ -542,7 +542,7 @@ async def get_api_key(
 
 async def require_api_key(
     request: Request,
-    api_key: APIKey | None = Security(get_api_key),
+    api_key: Optional[APIKey] = Security(get_api_key),
 ) -> APIKey:
     """Require a valid API key. Raises 401 if missing or invalid."""
     if api_key is None:
@@ -552,8 +552,8 @@ async def require_api_key(
 
 async def require_api_key_if_enabled(
     request: Request,
-    api_key: APIKey | None = Security(get_api_key),
-) -> APIKey | None:
+    api_key: Optional[APIKey] = Security(get_api_key),
+) -> Optional[APIKey]:
     """Enforce API-key auth only when REQUIRE_AUTH=true.
 
     This keeps backwards compatibility for existing deployments/tests
@@ -573,7 +573,7 @@ async def require_api_key_if_enabled(
 
 async def check_rate_limit(
     request: Request,
-    api_key: APIKey | None = Security(get_api_key),
+    api_key: Optional[APIKey] = Security(get_api_key),
 ) -> None:
     """Check rate limits. Uses key hash or client IP as identifier."""
     limiter = get_rate_limiter()

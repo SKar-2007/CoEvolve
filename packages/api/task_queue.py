@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ class TrainingJob:
     max_retries: int = 3
     use_react: bool = False
     created_at: float = field(default_factory=time.time)
-    started_at: float | None = None
-    completed_at: float | None = None
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
     result: dict[str, Any] = field(default_factory=dict)
     error: str = ""
 
@@ -64,7 +64,7 @@ class TaskQueue:
     # Terminal job keys expire so Redis does not grow without bound.
     RESULT_TTL_SECONDS = 7 * 24 * 3600
 
-    def __init__(self, redis_url: str | None = None) -> None:
+    def __init__(self, redis_url: Optional[str] = None) -> None:
         self._redis: Any = None
         self._memory_queue: list[TrainingJob] = []
         self._memory_results: dict[str, TrainingJob] = {}
@@ -100,7 +100,7 @@ class TaskQueue:
             logger.info("Enqueued job %s to memory queue", job.job_id)
         return job
 
-    def dequeue(self, timeout: int = 5) -> TrainingJob | None:
+    def dequeue(self, timeout: int = 5) -> Optional[TrainingJob]:
         """Blocking dequeue from the queue. Returns None on timeout."""
         if self._redis:
             result = self._redis.brpop(self.QUEUE_KEY, timeout=timeout)
@@ -148,7 +148,7 @@ class TaskQueue:
         else:
             self._memory_results[job.job_id] = job
 
-    def get_job(self, job_id: str) -> TrainingJob | None:
+    def get_job(self, job_id: str) -> Optional[TrainingJob]:
         """Get a job by ID."""
         if self._redis:
             data = self._redis.get(f"{self.RESULTS_PREFIX}{job_id}")
@@ -201,7 +201,7 @@ class TaskQueue:
 # Shared singleton — one queue per process, built from settings
 # ---------------------------------------------------------------------------
 
-_queue: TaskQueue | None = None
+_queue: Optional[TaskQueue] = None
 _queue_lock = threading.Lock()
 
 
