@@ -149,7 +149,7 @@ function Pre({ text, copy }: { text: string; copy?: string }) {
     }
   };
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", maxWidth: "100%", overflow: "hidden" }}>
       <pre
         style={{
           background: "var(--surface-2)",
@@ -190,9 +190,9 @@ function Pre({ text, copy }: { text: string; copy?: string }) {
 
 function Field({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 6 }}>
-      <span style={{ color: "var(--text-dim)", minWidth: 150, flexShrink: 0 }}>{k}</span>
-      <span style={{ wordBreak: "break-word" }}>{v}</span>
+    <div style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 6, minWidth: 0 }}>
+      <span style={{ color: "var(--text-dim)", minWidth: 120, flexShrink: 0 }}>{k}</span>
+      <span style={{ wordBreak: "break-word", minWidth: 0 }}>{v}</span>
     </div>
   );
 }
@@ -299,7 +299,7 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
         ) : (
           <Badge label="UNKNOWN" color="#8888a030" />
         )}
-        <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-dim)" }}>
+        <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-dim)", flexWrap: "wrap", minWidth: 0 }}>
           <span>
             <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: totalSast > 0 ? "#ff5451" : "#4caf50", marginRight: 4, verticalAlign: "middle" }} />
             SAST {totalSast > 0 ? `${totalSast} hits` : "clean"}
@@ -318,9 +318,9 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
       </div>
 
       {/* Structure / error */}
-      <div style={{ padding: "8px 14px" }}>
+      <div style={{ padding: "8px 14px", overflow: "hidden" }}>
         {verdict.structure && (
-          <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "0 0 6px" }}>{verdict.structure}</p>
+          <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "0 0 6px", wordBreak: "break-word", overflowWrap: "anywhere" }}>{verdict.structure}</p>
         )}
         {verdict.error && (
           <p style={{ fontSize: 12, color: "var(--accent)", margin: "0 0 6px" }}>Judge error: {verdict.error}</p>
@@ -344,12 +344,13 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
             <span>SAST Findings</span>
             <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>{totalSast} match{totalSast !== 1 ? "es" : ""}</span>
           </div>
-          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", tableLayout: "fixed" }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface)" }}>
-                <th style={{ padding: "6px 14px", borderBottom: "1px solid var(--border)", width: "25%" }}>Rule</th>
+                <th style={{ padding: "6px 14px", borderBottom: "1px solid var(--border)", width: "22%" }}>Rule</th>
                 <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "12%" }}>Severity</th>
-                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "28%" }}>Location</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "26%" }}>Location</th>
                 <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>Message</th>
               </tr>
             </thead>
@@ -363,26 +364,27 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
                     background: i % 2 === 0 ? "transparent" : "var(--surface)",
                   }}
                 >
-                  <td style={{ padding: "6px 14px", fontFamily: "monospace", fontSize: 11 }}>
+                  <td style={{ padding: "6px 14px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {f.rule_id.split(".").pop()}
                   </td>
                   <td style={{ padding: "6px 8px" }}>
                     <SeverityDot severity={f.severity} />
                     <span style={{ color: f.severity.toUpperCase() === "ERROR" ? "#ff5451" : "var(--text)" }}>{f.severity}</span>
                   </td>
-                  <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11 }} title={f.file}>
+                  <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.file}>
                     {shortFile(f.file)}:{f.line}
                   </td>
-                  <td style={{ padding: "6px 8px", fontSize: 11 }}>{f.message}</td>
+                  <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>{f.message}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {/* DAST section */}
-      <div style={{ borderTop: "1px solid var(--border)" }}>
+      <div style={{ borderTop: "1px solid var(--border)", overflow: "hidden" }}>
         <div
           style={{
             fontSize: 12,
@@ -392,6 +394,8 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
             borderBottom: "1px solid var(--border)",
             display: "flex",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 4,
           }}
         >
           <span>DAST Replay</span>
@@ -407,7 +411,7 @@ function VerdictTable({ verdict }: { verdict: Verdict }) {
             Not run — SAST was clean.
           </p>
         ) : (
-          <div style={{ padding: "8px 14px" }}>
+          <div style={{ padding: "8px 14px", overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px", fontSize: 12, marginBottom: 8 }}>
               <Field k="Exploit class" v={<code style={{ fontSize: 12 }}>{dast.exploit_class}</code>} />
               <Field
