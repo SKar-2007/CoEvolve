@@ -270,6 +270,10 @@ function shortFile(path: string): string {
   const parts = path.replace(/\\/g, "/").split("/");
   return parts.length > 3 ? `.../${parts.slice(-3).join("/")}` : path;
 }
+function fileExt(name: string): string {
+  const parts = name.split(".");
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
+}
 
 function VerdictTable({ verdict }: { verdict: Verdict }) {
   const findings = verdict.sast?.rules_matched ?? [];
@@ -581,7 +585,19 @@ export default function Dashboard() {
   // Upload state
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{total_findings: number; files: {filename: string; size: number; findings_count: number}[]; findings: Record<string, unknown>[]} | null>(null);
+  const [uploadResult, setUploadResult] = useState<{
+    total_findings: number;
+    files: {filename: string; size: number; findings_count: number; language?: string; severity_counts?: Record<string, number>; risk?: string}[];
+    findings: Record<string, unknown>[];
+    summary?: {
+      total_findings: number; risk_score: number; risk_level: string;
+      by_class: Record<string, number>; by_severity: Record<string, number>; by_confidence: Record<string, number>;
+      by_file: Record<string, number>; by_language: Record<string, number>; by_risk: Record<string, number>;
+      langs_with_findings: Record<string, number>; critical_count: number; warning_count: number; files_affected: number;
+    };
+    scan_info?: {duration_ms: number; timestamp: string; files_scanned: number; total_bytes: number; languages_detected: string[]; rules_used: number};
+    recommendations?: {rule_id: string; title: string; cwe: string; owasp: string; severity: string; risk: string; count: number; fix: string; files_affected: string[]; example: string}[];
+  } | null>(null);
   const [uploadError, setUploadError] = useState("");
   // Pause auto-refresh while the user inspects details so the UI doesn't jump.
   const interactiveRef = useRef(false);
@@ -1449,10 +1465,11 @@ export default function Dashboard() {
       {tab === "upload" && (
         <Section title="Upload Code Files">
           <p style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 16 }}>
-            Upload Python code files to scan for vulnerabilities using the SAST engine.
+            Upload code files (.py, .js, .ts, .java) to scan for vulnerabilities using the SAST engine.
           </p>
           <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
             <label
+              htmlFor="upload-file-input"
               style={{
                 background: "var(--surface)",
                 border: "1px solid var(--border)",
@@ -1465,10 +1482,12 @@ export default function Dashboard() {
             >
               Choose files
               <input
+                id="upload-file-input"
                 type="file"
                 multiple
-                accept=".py,.js,.ts,.java"
+                accept=".py,.js,.ts,.java,text/x-python,application/x-python-code,text/plain,application/javascript,text/typescript"
                 style={{ display: "none" }}
+                onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
                 onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
               />
             </label>
@@ -1502,47 +1521,151 @@ export default function Dashboard() {
 
           {uploadResult && (
             <div>
-              <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: 13 }}>
-                <span>Files scanned: <strong>{uploadResult.files.length}</strong></span>
-                <span>Total findings: <strong style={{ color: uploadResult.total_findings > 0 ? "var(--accent)" : "var(--green)" }}>{uploadResult.total_findings}</strong></span>
+              {/* Executive summary */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+                <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.5 }}>Risk Level</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4, color: uploadResult.summary?.risk_level === "Critical" ? "#ff5451" : uploadResult.summary?.risk_level === "High" ? "#ff6b35" : uploadResult.summary?.risk_level === "Medium" ? "#ffab40" : "#4caf50" }}>{uploadResult.summary?.risk_level || (uploadResult.total_findings > 0 ? "Medium" : "Low")}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>Score {uploadResult.summary?.risk_score ?? 0}/100</div>
+                </div>
+                <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.5 }}>Total Findings</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, color: uploadResult.total_findings > 0 ? "var(--accent)" : "var(--green)" }}>{uploadResult.total_findings}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{uploadResult.summary?.critical_count ?? 0} critical, {uploadResult.summary?.warning_count ?? 0} warnings</div>
+                </div>
+                <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.5 }}>Files Affected</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{uploadResult.summary?.files_affected ?? uploadResult.files.filter((f: any) => f.findings_count > 0).length}/{uploadResult.files.length}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{uploadResult.scan_info?.files_scanned ?? uploadResult.files.length} scanned</div>
+                </div>
+                <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.5 }}>Scan Time</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{uploadResult.scan_info ? `${uploadResult.scan_info.duration_ms} ms` : "—"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{uploadResult.scan_info?.languages_detected?.join(", ") || "—"} · {uploadResult.scan_info?.rules_used ?? 0} rules</div>
+                </div>
               </div>
 
-              {uploadResult.files.map((f, i) => (
-                <div
-                  key={i}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    padding: "8px 12px",
-                    marginBottom: 8,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "var(--surface)",
-                  }}
-                >
-                  <span style={{ fontFamily: "monospace", fontSize: 12 }}>{f.filename}</span>
-                  <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    {(f.size / 1024).toFixed(1)} KB — {f.findings_count} finding{f.findings_count !== 1 ? "s" : ""}
-                  </span>
+              {/* Breakdown by class and severity */}
+              {uploadResult.summary && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>By Vulnerability Class</div>
+                    {Object.keys(uploadResult.summary.by_class).length === 0 ? <span style={{ fontSize: 12, color: "var(--text-dim)" }}>No findings</span> : (
+                      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                        <thead><tr style={{ color: "var(--text-dim)", textAlign: "left" }}><th style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)" }}>Class</th><th style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>Count</th><th style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)" }}>CWE</th></tr></thead>
+                        <tbody>
+                          {Object.entries(uploadResult.summary.by_class).sort((a,b)=> (b[1] as number) - (a[1] as number)).map(([cls, cnt]) => {
+                            const rec = uploadResult.recommendations?.find(r => r.rule_id === cls);
+                            return (
+                              <tr key={cls} style={{ borderBottom: "1px solid var(--border)" }}>
+                                <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{cls}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{String(cnt)}</td>
+                                <td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>{rec?.cwe || "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>By Severity & Risk</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                      {Object.entries(uploadResult.summary.by_severity).map(([sev, cnt]) => (
+                        <span key={sev} style={{ background: sev === "ERROR" ? "#ff545130" : "#ffab4030", border: "1px solid var(--border)", borderRadius: 12, padding: "2px 8px", fontSize: 11 }}><SeverityDot severity={sev} />{sev}: {String(cnt)}</span>
+                      ))}
+                      {Object.keys(uploadResult.summary.by_severity).length === 0 && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>No findings</span>}
+                    </div>
+                    {uploadResult.summary.by_risk && Object.keys(uploadResult.summary.by_risk).length > 0 && (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {Object.entries(uploadResult.summary.by_risk).map(([risk, cnt]) => (
+                          <span key={risk} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{risk}: {String(cnt)}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-dim)" }}>
+                      Confidence: {Object.entries(uploadResult.summary.by_confidence).map(([k,v])=> `${k}:${v}`).join(" · ") || "—"}
+                    </div>
+                  </div>
                 </div>
-              ))}
+              )}
 
+              {/* Files detailed table */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Files Scanned ({uploadResult.files.length})</div>
+                <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                    <thead><tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface-2)" }}>
+                      <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)" }}>File</th>
+                      <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 90 }}>Language</th>
+                      <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 80 }}>Size</th>
+                      <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 90 }}>Findings</th>
+                      <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 100 }}>Risk</th>
+                    </tr></thead>
+                    <tbody>
+                      {uploadResult.files.map((f: any, i: number) => (
+                        <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "var(--surface)" }}>
+                          <td style={{ padding: "8px 10px", fontFamily: "monospace", fontSize: 11 }}>{f.filename}</td>
+                          <td style={{ padding: "8px 10px" }}><Badge label={f.language || fileExt(f.filename) || "unknown"} color={f.language === "python" ? "#3776ab30" : f.language === "javascript" ? "#f7df1e30" : f.language === "java" ? "#ed8b0030" : "#8888a030"} /></td>
+                          <td style={{ padding: "8px 10px", color: "var(--text-dim)" }}>{(f.size / 1024).toFixed(1)} KB</td>
+                          <td style={{ padding: "8px 10px", fontWeight: 700, color: f.findings_count > 0 ? "var(--accent)" : "var(--green)" }}>{f.findings_count}</td>
+                          <td style={{ padding: "8px 10px" }}><span style={{ background: f.risk === "High" ? "#ff545130" : f.risk === "Medium" ? "#ffab4030" : "#4caf5030", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{f.risk || (f.findings_count>0?"Medium":"Low")}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Recommendations */}
+              {uploadResult.recommendations && uploadResult.recommendations.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Prioritized Recommendations ({uploadResult.recommendations.length} classes)</div>
+                  <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                      <thead><tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface-2)" }}>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 22 }}>#</th>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 18 }}>Vulnerability</th>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 12 }}>CWE / OWASP</th>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 10 }}>Count</th>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", width: 12 }}>Risk</th>
+                        <th style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)" }}>Fix</th>
+                      </tr></thead>
+                      <tbody>
+                        {uploadResult.recommendations.map((r: any, i: number) => (
+                          <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "var(--surface)" }}>
+                            <td style={{ padding: "8px 10px" }}>{i+1}</td>
+                            <td style={{ padding: "8px 10px" }}><div style={{ fontWeight: 600 }}>{r.title}</div><div style={{ fontFamily: "monospace", fontSize: 10, color: "var(--text-dim)" }}>{r.rule_id}</div></td>
+                            <td style={{ padding: "8px 10px", fontSize: 11 }}><div>{r.cwe}</div><div style={{ color: "var(--text-dim)" }}>{r.owasp}</div></td>
+                            <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 700 }}>{r.count}</td>
+                            <td style={{ padding: "8px 10px" }}><Badge label={r.risk} color={r.risk==="Critical"?"#ff545130":r.risk==="High"?"#ff6b3530":"#ffab4030"} /></td>
+                            <td style={{ padding: "8px 10px", fontSize: 11 }}>{r.fix}<div style={{ color: "var(--text-dim)", marginTop: 4, fontFamily: "monospace", fontSize: 10 }}>Affected: {r.files_affected.join(", ")}</div></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed findings */}
               {uploadResult.findings.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Findings</div>
-                  <div style={{ overflowX: "auto" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Detailed Findings ({uploadResult.findings.length})</div>
+                  <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
                     <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", tableLayout: "fixed" }}>
                       <thead>
-                        <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface)" }}>
-                          <th style={{ padding: "6px 10px", borderBottom: "1px solid var(--border)", width: "20%" }}>Rule</th>
-                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "12%" }}>Severity</th>
-                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "25%" }}>Location</th>
-                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>Message</th>
+                        <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface-2)" }}>
+                          <th style={{ padding: "6px 10px", borderBottom: "1px solid var(--border)", width: "14%" }}>Rule</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "9%" }}>Severity</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "8%" }}>CWE</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "18%" }}>Location</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "7%" }}>Lang</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>Message & Fix</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {uploadResult.findings.map((f, i) => (
+                        {uploadResult.findings.map((f: any, i: number) => (
                           <tr
                             key={i}
                             style={{
@@ -1550,21 +1673,34 @@ export default function Dashboard() {
                               background: i % 2 === 0 ? "transparent" : "var(--surface)",
                             }}
                           >
-                            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {String(f.rule_id || "").split(".").pop()}
+                            <td style={{ padding: "6px 10px", fontSize: 11 }}>
+                              <div style={{ fontFamily: "monospace", fontWeight: 600 }}>{String(f.rule_id || "").split(".").pop()}</div>
+                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.title || "")}</div>
                             </td>
                             <td style={{ padding: "6px 8px" }}>
                               <SeverityDot severity={String(f.severity || "")} />
-                              <span style={{ color: String(f.severity || "").toUpperCase() === "ERROR" ? "#ff5451" : "var(--text)" }}>{String(f.severity)}</span>
+                              <span style={{ color: String(f.severity || "").toUpperCase() === "ERROR" ? "#ff5451" : "#ffab40", fontSize: 11 }}>{String(f.severity)}</span>
+                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.risk || "")}</div>
                             </td>
+                            <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 10 }}>{String(f.cwe || "—")}<div style={{ color: "var(--text-dim)", fontSize: 9 }}>{String(f.owasp || "").split(" ")[0]}</div></td>
                             <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {shortFile(String(f.file || ""))}:{String(f.line || "")}
+                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.confidence || "")}</div>
                             </td>
-                            <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>{String(f.message || "")}</td>
+                            <td style={{ padding: "6px 8px", fontSize: 11 }}>{String(f.language || "—")}</td>
+                            <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>
+                              <div>{String(f.message || "")}</div>
+                              {f.fix && <div style={{ marginTop: 4, padding: "4px 6px", background: "var(--surface-2)", borderRadius: 4, fontSize: 10, color: "var(--text-dim)" }}>Fix: {String(f.fix)}</div>}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)", display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    <span>Scan: {uploadResult.scan_info?.timestamp ? new Date(uploadResult.scan_info.timestamp).toLocaleString() : "—"} · {uploadResult.scan_info?.duration_ms} ms</span>
+                    <span>Rules: {uploadResult.scan_info?.rules_used ?? 0}</span>
+                    <span>Languages: {uploadResult.summary?.langs_with_findings ? Object.entries(uploadResult.summary.langs_with_findings).map(([k,v])=> `${k}:${v}`).join(" ") : "—"}</span>
                   </div>
                 </div>
               )}

@@ -15,6 +15,21 @@ from pathlib import Path
 RULES_DIR = Path(__file__).resolve().parent / "semgrep_rules"
 
 
+VULN_METADATA: dict[str, dict] = {
+    "sql-injection": {"cwe": "CWE-89", "owasp": "A03:2021 - Injection", "severity": "ERROR", "title": "SQL Injection", "fix": "Use parameterized queries / prepared statements; never concatenate user input into SQL.", "risk": "Critical"},
+    "command-injection": {"cwe": "CWE-78", "owasp": "A03:2021 - Injection", "severity": "ERROR", "title": "Command Injection", "fix": "Avoid shell=True; use subprocess with argument lists and strict allow-lists.", "risk": "Critical"},
+    "xss": {"cwe": "CWE-79", "owasp": "A03:2021 - Injection", "severity": "ERROR", "title": "Cross-Site Scripting (XSS)", "fix": "Escape output with html.escape / markupsafe.escape; use auto-escaping templates.", "risk": "High"},
+    "ssti": {"cwe": "CWE-1336", "owasp": "A03:2021 - Injection", "severity": "ERROR", "title": "Server-Side Template Injection", "fix": "Do not render user input as template; use safe rendering APIs.", "risk": "Critical"},
+    "xxe": {"cwe": "CWE-611", "owasp": "A05:2021 - Misconfiguration", "severity": "ERROR", "title": "XML External Entity (XXE)", "fix": "Disable external entities; use defusedxml.", "risk": "High"},
+    "path-traversal": {"cwe": "CWE-22", "owasp": "A01:2021 - Broken Access Control", "severity": "ERROR", "title": "Path Traversal", "fix": "Canonicalize with os.path.realpath and enforce base directory prefix.", "risk": "High"},
+    "ssrf": {"cwe": "CWE-918", "owasp": "A10:2021 - SSRF", "severity": "ERROR", "title": "Server-Side Request Forgery", "fix": "Allow-list URLs, block private IPs, disable redirects.", "risk": "High"},
+    "deserialization": {"cwe": "CWE-502", "owasp": "A08:2021 - Integrity Failures", "severity": "ERROR", "title": "Insecure Deserialization", "fix": "Use yaml.safe_load; avoid pickle on untrusted data.", "risk": "Critical"},
+    "open-redirect": {"cwe": "CWE-601", "owasp": "A01:2021 - Broken Access Control", "severity": "WARNING", "title": "Open Redirect", "fix": "Validate redirect against allow-list; use relative URLs.", "risk": "Medium"},
+    "prototype-pollution": {"cwe": "CWE-1321", "owasp": "A08:2021 - Integrity Failures", "severity": "WARNING", "title": "Prototype Pollution", "fix": "Block __proto__/constructor keys; use safe deep-merge.", "risk": "Medium"},
+    "sql": {"cwe": "CWE-89", "owasp": "A03:2021 - Injection", "severity": "ERROR", "title": "SQL Injection", "fix": "Use parameterized queries.", "risk": "Critical"},
+}
+
+
 @dataclass
 class SASTFinding:
     rule_id: str
@@ -26,6 +41,7 @@ class SASTFinding:
     metadata: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
+        meta = VULN_METADATA.get(self.rule_id, {})
         return {
             "rule_id": self.rule_id,
             "file": self.file,
@@ -33,6 +49,12 @@ class SASTFinding:
             "severity": self.severity,
             "confidence": self.confidence,
             "message": self.message,
+            "cwe": meta.get("cwe", ""),
+            "owasp": meta.get("owasp", ""),
+            "title": meta.get("title", self.rule_id),
+            "fix": meta.get("fix", ""),
+            "risk": meta.get("risk", self.severity),
+            "metadata": self.metadata,
         }
 
 
@@ -83,15 +105,22 @@ class SemgrepScanner:
     def scan_directory(self, target: Path, config: str | None = None) -> SASTResult:
         """Scan a directory with the bundled rules; return structured findings."""
         if not shutil.which(self.binary) and not Path(self.binary).is_file():
-            # Semgrep not available — fall back to keyword heuristic on all files
             return self._scan_directory_heuristic(target)
+        # Probe semgrep with first rule — if it fails, fall back to heuristic
+        all_rule_files = sorted(self.rules_dir.glob("*.yml"))
+        if all_rule_files:
+            probe_cmd = [self.binary, "--config", str(all_rule_files[0]), "--json", str(target)]
+            try:
+                probe = subprocess.run(
+                    probe_cmd, capture_output=True, text=True, timeout=30, check=False
+                )
+                if probe.returncode != 0 and not probe.stdout.strip():
+                    return self._scan_directory_heuristic(target)
+            except (subprocess.TimeoutExpired, OSError):
+                return self._scan_directory_heuristic(target)
         # Scan with each rule file individually to avoid semgrep rule selection issues
         all_findings: list[SASTFinding] = []
-        for rule_file in sorted(self.rules_dir.glob("*.yml")):
-            # Skip Java/JS rules for Python-only targets
-            stem = rule_file.stem
-            if stem.endswith("-java") or stem.endswith("-js"):
-                continue
+        for rule_file in all_rule_files:
             cmd = [
                 self.binary,
                 "--config",
@@ -109,30 +138,121 @@ class SemgrepScanner:
     def _scan_directory_heuristic(self, target: Path) -> SASTResult:
         """Keyword-based scan of all files in a directory (no semgrep needed)."""
         findings: list[SASTFinding] = []
-        py_files = list(target.rglob("*.py"))
-        # Limit to 10 files max to avoid timeout on free tier
-        for code_file in py_files[:10]:
+        seen: set[tuple[str, str, int]] = set()  # (base_rule_id, file, line) dedup
+        code_files = (
+            list(target.rglob("*.py"))
+            + list(target.rglob("*.js"))
+            + list(target.rglob("*.ts"))
+            + list(target.rglob("*.java"))
+        )
+        for code_file in code_files[:20]:
             try:
-                text = code_file.read_text(errors="ignore").lower()
+                lines = code_file.read_text(errors="ignore").splitlines()
             except Exception:
                 continue
+            text_lower = "\n".join(lines).lower()
             for rule_file in sorted(self.rules_dir.glob("*.yml")):
                 stem = rule_file.stem
-                if stem.endswith("-java") or stem.endswith("-js"):
-                    continue
-                if self._rule_hits_patch(rule_file, text):
+                base = stem.rsplit("-", 1)[0] if stem.endswith(("-js", "-java")) else stem
+                matches = self._find_keyword_matches(rule_file, text_lower, lines)
+                for line_num, keyword, snippet in matches:
+                    dedup_key = (base, str(code_file), line_num)
+                    if dedup_key in seen:
+                        continue
+                    seen.add(dedup_key)
+                    meta = VULN_METADATA.get(base, {})
                     findings.append(
                         SASTFinding(
-                            rule_id=stem,
+                            rule_id=base,
                             file=str(code_file),
-                            line=0,
-                            severity="WARNING",
+                            line=line_num,
+                            severity=meta.get("severity", "WARNING"),
                             confidence="MEDIUM",
-                            message="Keyword pattern matched in source file (heuristic scan)",
+                            message=f"Vulnerable pattern detected: `{keyword}` — {snippet}",
+                            metadata={"keyword": keyword, "snippet": snippet},
                         )
                     )
-                    break  # One finding per file is enough
         return SASTResult(findings=findings)
+
+    def _find_keyword_matches(
+        self, rule_file: Path, text_lower: str, lines: list[str]
+    ) -> list[tuple[int, str, str]]:
+        """Find matching keywords with line numbers and context snippets."""
+        keywords = self._get_keywords()
+        stem = rule_file.stem
+        base = stem.rsplit("-", 1)[0] if stem.endswith(("-js", "-java")) else stem
+        kw_tuple = keywords.get(stem) or keywords.get(base, ())
+        if not kw_tuple:
+            return []
+        matches: list[tuple[int, str, str]] = []
+        for i, line in enumerate(lines, 1):
+            line_lower = line.lower().strip()
+            if not line_lower or line_lower.startswith("#") or line_lower.startswith("//"):
+                continue
+            for kw in kw_tuple:
+                if kw.lower() in line_lower:
+                    snippet = line.strip()[:80]
+                    matches.append((i, kw, snippet))
+                    break  # one match per line
+        return matches
+
+    @staticmethod
+    def _get_keywords() -> dict[str, tuple[str, ...]]:
+        return {
+            "sql": (
+                "select * from", "where username", "like '%", "or 1=1",
+                "f\"select", "f'select", "cursor.execute", "sqlite3",
+                "jdbctemplate", "query = f", "sql = \"", "sql = '",
+                "username like", "password='", "username='",
+            ),
+            "sql-injection": (
+                "select * from", "where username", "like '%", "or 1=1",
+                "f\"select", "f'select", "cursor.execute", "sqlite3",
+                "jdbctemplate", "query = f", "sql = \"", "sql = '",
+                "username like", "password='", "username='",
+            ),
+            "path-traversal": (
+                "os.path.join", "path.join", "path traversal",
+                "open(filepath", "readstring(path", "files.readstring",
+                "../", "..\\", "secret.txt",
+            ),
+            "ssrf": (
+                "urlopen", "http.get", "urllib.request",
+                "requests.get", "requests.post", "http.request", "urlretrieve",
+                "openconnection", "httpurlconnection",
+            ),
+            "command-injection": (
+                "shell=true", "os.system", "subprocess.run", "subprocess.popen",
+                "runtime.getruntime().exec", "ping -c 1", "exec(", "popen(",
+            ),
+            "xss": (
+                "render_template_string", "dangerouslysetinnerhtml",
+                "innerhtml", "document.write", "mark_safe",
+                "search results for", "<p>search", "res.end(`<p>",
+            ),
+            "deserialization": (
+                "yaml.load", "pickle.", "readobject", "marshal", "shelve",
+                "jsonpickle", "yaml.fullloader", "yaml.safeloader",
+            ),
+            "ssti": (
+                "render_template_string", "jinja2", "template.from_string",
+                "environment.from_string", "from_string",
+            ),
+            "xxe": (
+                "xml.etree", "lxml", "etree", "defusedxml",
+                "<!entity", "<!doctype", "external entity", "dtd",
+            ),
+            "open-redirect": (
+                "sendredirect", "openredirect", "open_redirect", "302",
+                "httpresponseredirect", "redirect_uri", "location",
+                "window.location",
+            ),
+            "prototype-pollution": (
+                "__proto__", "constructor.prototype", "prototype pollution",
+                "deep_merge", "deepmerge",
+                "deepmerge", "object.assign",
+            ),
+        }
 
     def scan_patch(self, patch_text: str, syntax: str = "python") -> SASTResult:
         """Scan a code patch string directly (best-effort heuristic).
@@ -141,18 +261,20 @@ class SemgrepScanner:
         patterns against the patch text for fast pre-screening.
         """
         findings: list[SASTFinding] = []
+        lines = patch_text.splitlines()
+        text_lower = patch_text.lower()
         for rule_file in sorted(self.rules_dir.glob("*.yml")):
             rule_id = rule_file.stem
-            text = patch_text.lower()
-            if self._rule_hits_patch(rule_file, text):
+            matches = self._find_keyword_matches(rule_file, text_lower, lines)
+            for line_num, keyword, snippet in matches:
                 findings.append(
                     SASTFinding(
                         rule_id=rule_id,
                         file="<patch>",
-                        line=0,
+                        line=line_num,
                         severity="WARNING",
                         confidence="MEDIUM",
-                        message="Candidate pattern matched in patch text (pre-screened)",
+                        message=f"Vulnerable pattern detected: `{keyword}` — {snippet}",
                     )
                 )
         return SASTResult(findings=findings)
