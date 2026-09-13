@@ -28,7 +28,7 @@ services:
       - key: LLM_PROVIDER
         value: modelscope
       - key: LLM_MODEL
-        value: Qwen/Qwen3-8B
+        value: Qwen/Qwen3-30B-A3B
       - key: MODELSCOPE_API_KEY
         sync: false
       - key: LOG_LEVEL
