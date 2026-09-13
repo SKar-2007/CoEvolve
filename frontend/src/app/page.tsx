@@ -597,8 +597,12 @@ export default function Dashboard() {
     };
     scan_info?: {duration_ms: number; timestamp: string; files_scanned: number; total_bytes: number; languages_detected: string[]; rules_used: number};
     recommendations?: {rule_id: string; title: string; cwe: string; owasp: string; severity: string; risk: string; count: number; fix: string; files_affected: string[]; example: string}[];
+    sast_logs?: string[];
+    dast_logs?: string[];
+    tabular_summary?: {id: number; file: string; line: number; language: string; rule_id: string; title: string; cwe: string; owasp: string; severity: string; confidence: string; risk: string; sast_log: string; dast_payload: string; dast_payload_desc: string; dast_log: string; dast_status: string; message: string; fix: string; code_context: {line: number; content: string; is_target: boolean}[]}[];
   } | null>(null);
   const [uploadError, setUploadError] = useState("");
+  const [expandedFinding, setExpandedFinding] = useState<number | null>(null);
   // Pause auto-refresh while the user inspects details so the UI doesn't jump.
   const interactiveRef = useRef(false);
   interactiveRef.current =
@@ -1648,10 +1652,101 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Detailed findings */}
+              {/* Full Tabular Summary - SAST + DAST */}
+              {uploadResult.tabular_summary && uploadResult.tabular_summary.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Full Tabular Summary — SAST + DAST ({uploadResult.tabular_summary.length} findings) <span style={{ fontWeight: 400, color: "var(--text-dim)", fontSize: 11 }}>— click row for SAST/DAST logs & code</span></div>
+                  <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface-2)" }}>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 36 }}>#</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 130 }}>Rule / CWE</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 170 }}>Location</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 90 }}>Severity</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 160 }}>DAST Payload</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)", width: 110 }}>DAST Status</th>
+                          <th style={{ padding: "7px 8px", borderBottom: "1px solid var(--border)" }}>Fix</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(uploadResult.tabular_summary as any[]).map((r: any) => (
+                          <>
+                            <tr
+                              key={r.id}
+                              onClick={() => setExpandedFinding(expandedFinding === r.id ? null : r.id)}
+                              style={{ cursor: "pointer", borderBottom: "1px solid var(--border)", background: expandedFinding === r.id ? "var(--surface-2)" : r.id % 2 === 0 ? "transparent" : "var(--surface)", transition: "background 0.15s" }}
+                            >
+                              <td style={{ padding: "7px 8px", fontWeight: 600 }}>{r.id} {expandedFinding === r.id ? "▼" : "▶"}</td>
+                              <td style={{ padding: "7px 8px" }}>
+                                <div style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.rule_id}</div>
+                                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{r.cwe} · {r.title}</div>
+                              </td>
+                              <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 10 }}>{shortFile(r.file)}:{r.line}<div style={{ color: "var(--text-dim)" }}>{r.language}</div></td>
+                              <td style={{ padding: "7px 8px" }}><SeverityDot severity={r.severity} /><span style={{ color: r.severity === "ERROR" ? "#ff5451" : "#ffab40" }}>{r.severity}</span><div style={{ fontSize: 10, color: "var(--text-dim)" }}>{r.risk} · {r.confidence}</div></td>
+                              <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 10, wordBreak: "break-all" }}>{r.dast_payload || "—"}<div style={{ color: "var(--text-dim)", fontSize: 9 }}>{r.dast_payload_desc}</div></td>
+                              <td style={{ padding: "7px 8px" }}><span style={{ background: r.dast_status.includes("VULNERABLE") ? "#ff545130" : "#ffab4030", padding: "2px 6px", borderRadius: 4, fontSize: 10 }}>{r.dast_status}</span></td>
+                              <td style={{ padding: "7px 8px", fontSize: 10, color: "var(--text-dim)" }}>{r.fix.slice(0, 80)}...</td>
+                            </tr>
+                            {expandedFinding === r.id && (
+                              <tr key={`exp-${r.id}`}>
+                                <td colSpan={7} style={{ padding: 0, background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
+                                  <div style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                    {/* SAST Panel */}
+                                    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: 10 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#4caf50" }}>SAST Analysis</div>
+                                      <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                                        <tbody>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)", width: 100 }}>Rule</td><td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{r.rule_id} ({r.cwe})</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>OWASP</td><td style={{ padding: "4px 6px" }}>{r.owasp}</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Severity</td><td style={{ padding: "4px 6px" }}><SeverityDot severity={r.severity} />{r.severity} ({r.risk})</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Location</td><td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{r.file}:{r.line} ({r.language})</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Message</td><td style={{ padding: "4px 6px" }}>{r.message}</td></tr>
+                                        </tbody>
+                                      </table>
+                                      <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Code Context</div>
+                                      <pre style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, fontSize: 11, marginTop: 4, overflowX: "auto" }}>
+                                        {(r.code_context as any[]).map((c: any) => (
+                                          <div key={c.line} style={{ background: c.is_target ? "#ff545115" : "transparent", fontWeight: c.is_target ? 700 : 400 }}>
+                                            <span style={{ color: "var(--text-dim)", marginRight: 8 }}>{String(c.line).padStart(3, " ")}:</span>{c.content}
+                                          </div>
+                                        ))}
+                                      </pre>
+                                      <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8, textTransform: "uppercase" }}>SAST Log</div>
+                                      <pre style={{ background: "#0a1f0a", color: "#4caf50", borderRadius: 4, padding: 8, fontSize: 10, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{r.sast_log}</pre>
+                                    </div>
+                                    {/* DAST Panel */}
+                                    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: 10 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#ff5451" }}>DAST Replay</div>
+                                      <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                                        <tbody>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)", width: 100 }}>Payload</td><td style={{ padding: "4px 6px", fontFamily: "monospace", wordBreak: "break-all" }}>{r.dast_payload}</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Description</td><td style={{ padding: "4px 6px" }}>{r.dast_payload_desc}</td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Status</td><td style={{ padding: "4px 6px" }}><span style={{ background: r.dast_status.includes("VULNERABLE") ? "#ff545130" : "#4caf5030", padding: "2px 6px", borderRadius: 4 }}>{r.dast_status}</span></td></tr>
+                                          <tr><td style={{ padding: "4px 6px", color: "var(--text-dim)" }}>Expected</td><td style={{ padding: "4px 6px" }}>{r.title}</td></tr>
+                                        </tbody>
+                                      </table>
+                                      <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8, textTransform: "uppercase" }}>DAST Log</div>
+                                      <pre style={{ background: "#1f0a0a", color: "#ff8a65", borderRadius: 4, padding: 8, fontSize: 10, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{r.dast_log}</pre>
+                                      <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8, textTransform: "uppercase" }}>Fix Recommendation</div>
+                                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, fontSize: 11, marginTop: 4 }}>{r.fix}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed findings (legacy simple table, now with expand) */}
               {uploadResult.findings.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Detailed Findings ({uploadResult.findings.length})</div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Detailed Findings — Click to expand SAST/DAST ({uploadResult.findings.length})</div>
                   <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
                     <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", tableLayout: "fixed" }}>
                       <thead>
@@ -1666,33 +1761,58 @@ export default function Dashboard() {
                       </thead>
                       <tbody>
                         {uploadResult.findings.map((f: any, i: number) => (
-                          <tr
-                            key={i}
-                            style={{
-                              borderBottom: "1px solid var(--border)",
-                              background: i % 2 === 0 ? "transparent" : "var(--surface)",
-                            }}
-                          >
-                            <td style={{ padding: "6px 10px", fontSize: 11 }}>
-                              <div style={{ fontFamily: "monospace", fontWeight: 600 }}>{String(f.rule_id || "").split(".").pop()}</div>
-                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.title || "")}</div>
-                            </td>
-                            <td style={{ padding: "6px 8px" }}>
-                              <SeverityDot severity={String(f.severity || "")} />
-                              <span style={{ color: String(f.severity || "").toUpperCase() === "ERROR" ? "#ff5451" : "#ffab40", fontSize: 11 }}>{String(f.severity)}</span>
-                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.risk || "")}</div>
-                            </td>
-                            <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 10 }}>{String(f.cwe || "—")}<div style={{ color: "var(--text-dim)", fontSize: 9 }}>{String(f.owasp || "").split(" ")[0]}</div></td>
-                            <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {shortFile(String(f.file || ""))}:{String(f.line || "")}
-                              <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.confidence || "")}</div>
-                            </td>
-                            <td style={{ padding: "6px 8px", fontSize: 11 }}>{String(f.language || "—")}</td>
-                            <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>
-                              <div>{String(f.message || "")}</div>
-                              {f.fix && <div style={{ marginTop: 4, padding: "4px 6px", background: "var(--surface-2)", borderRadius: 4, fontSize: 10, color: "var(--text-dim)" }}>Fix: {String(f.fix)}</div>}
-                            </td>
-                          </tr>
+                          <>
+                            <tr
+                              key={i}
+                              onClick={() => setExpandedFinding(expandedFinding === 1000+i ? null : 1000+i)}
+                              style={{
+                                cursor: "pointer",
+                                borderBottom: "1px solid var(--border)",
+                                background: expandedFinding === 1000+i ? "var(--surface-2)" : i % 2 === 0 ? "transparent" : "var(--surface)",
+                              }}
+                            >
+                              <td style={{ padding: "6px 10px", fontSize: 11 }}>
+                                <div style={{ fontFamily: "monospace", fontWeight: 600 }}>{String(f.rule_id || "").split(".").pop()} {expandedFinding === 1000+i ? "▼" : "▶"}</div>
+                                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String((f as any).title || "")}</div>
+                              </td>
+                              <td style={{ padding: "6px 8px" }}>
+                                <SeverityDot severity={String(f.severity || "")} />
+                                <span style={{ color: String(f.severity || "").toUpperCase() === "ERROR" ? "#ff5451" : "#ffab40", fontSize: 11 }}>{String(f.severity)}</span>
+                                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String((f as any).risk || "")}</div>
+                              </td>
+                              <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 10 }}>{String((f as any).cwe || "—")}<div style={{ color: "var(--text-dim)", fontSize: 9 }}>{String((f as any).owasp || "").split(" ")[0]}</div></td>
+                              <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {shortFile(String(f.file || ""))}:{String(f.line || "")}
+                                <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{String(f.confidence || "")}</div>
+                              </td>
+                              <td style={{ padding: "6px 8px", fontSize: 11 }}>{String((f as any).language || "—")}</td>
+                              <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>
+                                <div>{String(f.message || "")}</div>
+                                {(f as any).fix && <div style={{ marginTop: 4, padding: "4px 6px", background: "var(--surface-2)", borderRadius: 4, fontSize: 10, color: "var(--text-dim)" }}>Fix: {String((f as any).fix).slice(0, 80)}...</div>}
+                              </td>
+                            </tr>
+                            {expandedFinding === 1000+i && (
+                              <tr key={`exp2-${i}`}>
+                                <td colSpan={6} style={{ padding: 12, background: "var(--surface-2)" }}>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11 }}>
+                                    <div>
+                                      <div style={{ fontWeight: 700, marginBottom: 4, color: "#4caf50" }}>SAST</div>
+                                      <pre style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 10 }}>{String((f as any).sast_log || "No SAST log")}</pre>
+                                      {(f as any).code_context && (
+                                        <><div style={{ fontWeight: 600, marginTop: 8 }}>Code</div><pre style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, fontSize: 11 }}>{(f as any).code_context.map((c:any)=> `${c.is_target?">":" "} ${String(c.line).padStart(3," ")}: ${c.content}`).join("\n")}</pre></>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div style={{ fontWeight: 700, marginBottom: 4, color: "#ff5451" }}>DAST</div>
+                                      <pre style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 10 }}>{String((f as any).dast_log || "No DAST log")}</pre>
+                                      <div style={{ marginTop: 8 }}><strong>Payload:</strong> <code style={{ wordBreak: "break-all" }}>{String((f as any).exploit_payload?.payload || (f as any).exploit_payload || "—")}</code></div>
+                                      <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>{String((f as any).exploit_payload?.description || "")}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
                         ))}
                       </tbody>
                     </table>
@@ -1701,6 +1821,20 @@ export default function Dashboard() {
                     <span>Scan: {uploadResult.scan_info?.timestamp ? new Date(uploadResult.scan_info.timestamp).toLocaleString() : "—"} · {uploadResult.scan_info?.duration_ms} ms</span>
                     <span>Rules: {uploadResult.scan_info?.rules_used ?? 0}</span>
                     <span>Languages: {uploadResult.summary?.langs_with_findings ? Object.entries(uploadResult.summary.langs_with_findings).map(([k,v])=> `${k}:${v}`).join(" ") : "—"}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* SAST / DAST Logs */}
+              {(uploadResult.sast_logs || uploadResult.dast_logs) && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#4caf50" }}>SAST Logs ({uploadResult.sast_logs?.length ?? 0})</div>
+                    <pre style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, fontSize: 10, maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap" }}>{(uploadResult.sast_logs || []).join("\n") || "No logs"}</pre>
+                  </div>
+                  <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#ff5451" }}>DAST Logs ({uploadResult.dast_logs?.length ?? 0})</div>
+                    <pre style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 8, fontSize: 10, maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap" }}>{(uploadResult.dast_logs || []).join("\n") || "No logs"}</pre>
                   </div>
                 </div>
               )}

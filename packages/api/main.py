@@ -442,7 +442,42 @@ async def upload_and_scan(
 
             result = scanner.scan_directory(tmp_path)
             duration_ms = int((time.time() - start) * 1000)
+
+            # Load exploit payloads for DAST simulation
+            import json as _json
+            payload_path = Path(__file__).resolve().parents[2] / "data" / "exploit_payloads.json"
+            try:
+                exploit_db = _json.loads(payload_path.read_text()) if payload_path.exists() else {}
+            except Exception:
+                exploit_db = {}
+            # Normalize keys for lookup (lowercase, no hyphen)
+            def _payloads_for(rule_id: str):
+                key_map = {
+                    "sql-injection": "SQLi", "sql": "SQLi",
+                    "path-traversal": "PathTraversal",
+                    "command-injection": "CommandInjection",
+                    "xss": "XSS", "ssti": "SSTI", "xxe": "XXE",
+                    "ssrf": "SSRF", "deserialization": "Deserialization",
+                    "open-redirect": "OpenRedirect", "prototype-pollution": "PrototypePollution",
+                }
+                k = key_map.get(rule_id, rule_id)
+                vals = exploit_db.get(k) or exploit_db.get(k.lower()) or exploit_db.get(rule_id) or []
+                # handle duplicate XSS key
+                if not vals and rule_id == "xss":
+                    vals = exploit_db.get("XSS", [])
+                return vals
+
+            # Cache file contents for code context
+            file_cache: dict[str, list[str]] = {}
+            for info in uploaded:
+                try:
+                    file_cache[info["filename"]] = (tmp_path / info["filename"]).read_text(errors="ignore").splitlines()
+                except Exception:
+                    file_cache[info["filename"]] = []
+
             all_findings: list[dict] = []
+            sast_logs: list[str] = []
+            dast_logs: list[str] = []
             for f in result.findings:
                 d = f.as_dict()
                 try:
@@ -450,8 +485,35 @@ async def upload_and_scan(
                 except Exception:
                     rel = Path(d["file"]).name
                 d["file"] = rel
-                # add language
                 d["language"] = {".py": "python", ".js": "javascript", ".ts": "typescript", ".java": "java"}.get(Path(rel).suffix.lower(), "unknown")
+                # Code context (2 lines before/after)
+                lines = file_cache.get(rel, [])
+                ctx = []
+                if lines and d["line"] > 0:
+                    start_l = max(1, d["line"] - 2)
+                    end_l = min(len(lines), d["line"] + 2)
+                    for ln in range(start_l, end_l + 1):
+                        ctx.append({"line": ln, "content": lines[ln-1] if 0 < ln <= len(lines) else "", "is_target": ln == d["line"]})
+                else:
+                    ctx = [{"line": d["line"], "content": d.get("message","")[:80], "is_target": True}]
+                d["code_context"] = ctx
+                # SAST log
+                sast_entry = f"[SAST] {d['rule_id']} ({d.get('cwe','')}) at {rel}:{d['line']} | severity={d['severity']} | keyword={d.get('metadata',{}).get('keyword','')} | confidence={d['confidence']}"
+                d["sast_log"] = sast_entry
+                sast_logs.append(sast_entry)
+                # DAST payloads and logs
+                payloads = _payloads_for(d["rule_id"])
+                dast_payload = payloads[0] if payloads else {"payload": "N/A", "description": "No payload mapped"}
+                d["exploit_payload"] = dast_payload
+                d["exploit_payloads"] = payloads[:3]
+                # Simulated DAST log
+                status = "VULNERABLE (simulated)" if d["severity"] == "ERROR" else "POTENTIALLY VULNERABLE"
+                dast_entry = f"[DAST] {d['rule_id']} payload={dast_payload.get('payload','')} | target={rel}:{d['line']} | result={status} | expected: {VULN_METADATA.get(d['rule_id'],{}).get('title','')}"
+                d["dast_log"] = dast_entry
+                d["dast_status"] = status
+                dast_logs.append(dast_entry)
+                # Fix code snippet helper
+                d["fix_code"] = f"// Fix for {d['rule_id']}: {VULN_METADATA.get(d['rule_id'],{}).get('fix','')}"
                 all_findings.append(d)
 
             # Per-file summaries
@@ -534,6 +596,31 @@ async def upload_and_scan(
                 "files_affected": len([f for f in file_summaries if f["findings_count"] > 0]),
             }
 
+            # Full tabular summary (one row per finding, combining SAST+DAST)
+            tabular_summary = []
+            for idx, f in enumerate(all_findings, 1):
+                tabular_summary.append({
+                    "id": idx,
+                    "file": f["file"],
+                    "line": f["line"],
+                    "language": f["language"],
+                    "rule_id": f["rule_id"],
+                    "title": f.get("title", ""),
+                    "cwe": f.get("cwe", ""),
+                    "owasp": f.get("owasp", ""),
+                    "severity": f["severity"],
+                    "confidence": f["confidence"],
+                    "risk": f.get("risk", ""),
+                    "sast_log": f.get("sast_log", ""),
+                    "dast_payload": f.get("exploit_payload", {}).get("payload", "") if isinstance(f.get("exploit_payload"), dict) else str(f.get("exploit_payload", "")),
+                    "dast_payload_desc": f.get("exploit_payload", {}).get("description", "") if isinstance(f.get("exploit_payload"), dict) else "",
+                    "dast_log": f.get("dast_log", ""),
+                    "dast_status": f.get("dast_status", ""),
+                    "message": f["message"],
+                    "fix": f.get("fix", ""),
+                    "code_context": f.get("code_context", []),
+                })
+
             return {
                 "total_findings": len(all_findings),
                 "files": file_summaries,
@@ -541,6 +628,9 @@ async def upload_and_scan(
                 "summary": summary,
                 "scan_info": scan_info,
                 "recommendations": recommendations,
+                "sast_logs": sast_logs,
+                "dast_logs": dast_logs,
+                "tabular_summary": tabular_summary,
             }
     except Exception as e:
         return {
@@ -550,6 +640,9 @@ async def upload_and_scan(
             "summary": {},
             "scan_info": {},
             "recommendations": [],
+            "sast_logs": [],
+            "dast_logs": [],
+            "tabular_summary": [],
             "error": f"Scan failed: {str(e)}",
         }
 
