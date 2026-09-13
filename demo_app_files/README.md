@@ -1,13 +1,14 @@
 # Demo Vulnerable Apps
 
-Intentionally vulnerable applications for DAST scan testing. Upload any of these to the scanning system.
+Intentionally vulnerable applications for SAST/DAST scan testing. Upload any of these to the scanning system.
 
 ## Structure
 
 ```
 demo_app_files/
-├── python/              # 10 Flask vulnerable apps
-│   ├── vulnerable_app.py
+├── python/              # 10 Flask vulnerable apps + FIXED safe version
+│   ├── vulnerable_app.py  # 34 findings (Critical)
+│   ├── safe_app.py        # 0 findings (Low) - FIXED demo
 │   └── requirements.txt
 ├── javascript/          # 6 Node.js vulnerable apps
 │   ├── vulnerable_app_js.js
@@ -33,14 +34,30 @@ demo_app_files/
 | XXE                | ✅     |            |      |
 | Prototype Pollution| ✅     |            |      |
 
+## Demo: Vulnerable vs Safe
+
+Upload to `/training/upload` (Upload tab) to see full tabular SAST+DAST report:
+
+| File | Findings | Risk | Demo |
+|------|----------|------|------|
+| `vulnerable_app.py` | 34 | Critical | Click row → expand SAST/DAST logs + code context + fix |
+| `safe_app.py` | 0 | Low | Shows 0 findings — ideal for side-by-side demo |
+
+**How to demo:**
+1. Upload `vulnerable_app.py` → see Executive Summary (Risk 100/Critical), By-Class table (SQLi 6, PathTraversal 5...), Full Tabular Summary — click any row to expand SAST log + code context + DAST payload/log + fix.
+2. Upload `safe_app.py` → see 0 findings, Risk Low — proves fix works.
+3. Upload both together → compare per-file counts.
+
 ## Run Instructions
 
 ### Python (Flask)
 ```bash
 cd demo_app_files/python
 pip install -r requirements.txt
-# Run specific class:
+# Run vulnerable (34 findings):
 python vulnerable_app.py --class SQLi --port 5000
+# Run safe (0 findings) — same API, fixed code:
+python safe_app.py --class SQLi --port 5001
 # Available classes: SQLi, PathTraversal, CommandInjection, XSS, SSTI, SSRF, OpenRedirect, Deserialization, XXE, PrototypePollution
 ```
 
