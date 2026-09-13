@@ -85,7 +85,7 @@ interface Coverage {
   coverage_rate: number;
 }
 
-type Tab = "overview" | "episodes" | "rules" | "prompts" | "jobs" | "coverage";
+type Tab = "overview" | "episodes" | "rules" | "prompts" | "jobs" | "coverage" | "upload";
 
 function Badge({ label, color }: { label: string; color: string }) {
   return (
@@ -578,6 +578,11 @@ export default function Dashboard() {
   const [epOutcome, setEpOutcome] = useState("all");
   const [epLimit, setEpLimit] = useState(100);
   const EP_PAGE = 100;
+  // Upload state
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{total_findings: number; files: {filename: string; size: number; findings_count: number}[]; findings: Record<string, unknown>[]} | null>(null);
+  const [uploadError, setUploadError] = useState("");
   // Pause auto-refresh while the user inspects details so the UI doesn't jump.
   const interactiveRef = useRef(false);
   interactiveRef.current =
@@ -695,6 +700,28 @@ export default function Dashboard() {
     }
   };
 
+  const handleUpload = async () => {
+    if (uploadFiles.length === 0) return;
+    setUploading(true);
+    setUploadError("");
+    setUploadResult(null);
+    try {
+      const formData = new FormData();
+      uploadFiles.forEach((f) => formData.append("files", f));
+      const r = await fetch(`${API}/training/upload?vulnerability_class=SQLi`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!r.ok) throw new Error(`Upload failed: ${r.status}`);
+      const data = await r.json();
+      setUploadResult(data);
+    } catch (e: unknown) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Derived stats
   const vulnByClass: Record<string, { total: number; vuln: number }> = {};
   episodes.forEach((ep) => {
@@ -756,6 +783,7 @@ export default function Dashboard() {
     { id: "prompts", label: "Prompts" },
     { id: "jobs", label: `Jobs (${jobs.length})` },
     { id: "coverage", label: "Coverage" },
+    { id: "upload", label: "Upload" },
   ];
 
   const fmtDate = (s: string) => {
@@ -1414,6 +1442,133 @@ export default function Dashboard() {
                 ))}
               </tbody>
             </table>
+          )}
+        </Section>
+      )}
+
+      {tab === "upload" && (
+        <Section title="Upload Code Files">
+          <p style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 16 }}>
+            Upload Python code files to scan for vulnerabilities using the SAST engine.
+          </p>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+            <label
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "8px 16px",
+                fontSize: 13,
+                cursor: "pointer",
+                color: "var(--text)",
+              }}
+            >
+              Choose files
+              <input
+                type="file"
+                multiple
+                accept=".py,.js,.ts,.java"
+                style={{ display: "none" }}
+                onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+              />
+            </label>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {uploadFiles.length > 0 ? `${uploadFiles.length} file(s) selected` : "No files selected"}
+            </span>
+            <button
+              onClick={handleUpload}
+              disabled={uploading || uploadFiles.length === 0}
+              style={{
+                background: uploading ? "var(--surface)" : "var(--accent)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 6,
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: uploading ? "not-allowed" : "pointer",
+                opacity: uploadFiles.length === 0 ? 0.5 : 1,
+              }}
+            >
+              {uploading ? "Scanning..." : "Scan Files"}
+            </button>
+          </div>
+
+          {uploadError && (
+            <div style={{ background: "#ff545120", border: "1px solid var(--accent)", padding: 12, borderRadius: 6, marginBottom: 16, fontSize: 13, color: "var(--accent)" }}>
+              {uploadError}
+            </div>
+          )}
+
+          {uploadResult && (
+            <div>
+              <div style={{ display: "flex", gap: 16, marginBottom: 16, fontSize: 13 }}>
+                <span>Files scanned: <strong>{uploadResult.files.length}</strong></span>
+                <span>Total findings: <strong style={{ color: uploadResult.total_findings > 0 ? "var(--accent)" : "var(--green)" }}>{uploadResult.total_findings}</strong></span>
+              </div>
+
+              {uploadResult.files.map((f, i) => (
+                <div
+                  key={i}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    padding: "8px 12px",
+                    marginBottom: 8,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "var(--surface)",
+                  }}
+                >
+                  <span style={{ fontFamily: "monospace", fontSize: 12 }}>{f.filename}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                    {(f.size / 1024).toFixed(1)} KB — {f.findings_count} finding{f.findings_count !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              ))}
+
+              {uploadResult.findings.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Findings</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", tableLayout: "fixed" }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "var(--text-dim)", background: "var(--surface)" }}>
+                          <th style={{ padding: "6px 10px", borderBottom: "1px solid var(--border)", width: "20%" }}>Rule</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "12%" }}>Severity</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", width: "25%" }}>Location</th>
+                          <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadResult.findings.map((f, i) => (
+                          <tr
+                            key={i}
+                            style={{
+                              borderBottom: "1px solid var(--border)",
+                              background: i % 2 === 0 ? "transparent" : "var(--surface)",
+                            }}
+                          >
+                            <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {String(f.rule_id || "").split(".").pop()}
+                            </td>
+                            <td style={{ padding: "6px 8px" }}>
+                              <SeverityDot severity={String(f.severity || "")} />
+                              <span style={{ color: String(f.severity || "").toUpperCase() === "ERROR" ? "#ff5451" : "var(--text)" }}>{String(f.severity)}</span>
+                            </td>
+                            <td style={{ padding: "6px 8px", fontFamily: "monospace", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {shortFile(String(f.file || ""))}:{String(f.line || "")}
+                            </td>
+                            <td style={{ padding: "6px 8px", fontSize: 11, wordBreak: "break-word" }}>{String(f.message || "")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </Section>
       )}

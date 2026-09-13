@@ -9,7 +9,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
@@ -399,6 +399,46 @@ def run_training_episode(
         duration_s=trace.duration_s,
         error=trace.error or None,
     )
+
+
+# ---------------------------------------------------------------------------
+# File Upload — Scan uploaded code for vulnerabilities
+# ---------------------------------------------------------------------------
+@app.post("/training/upload")
+async def upload_and_scan(
+    files: list[UploadFile] = File(...),
+    vulnerability_class: str = Query("SQLi"),
+    _auth: Optional[APIKey] = Depends(require_api_key_if_enabled),
+) -> dict:
+    """Upload code files, scan with SAST, and return findings."""
+    import tempfile, shutil
+    from pathlib import Path
+    from ..judge.sast.scanner import SemgrepScanner
+
+    scanner = SemgrepScanner()
+    all_findings = []
+    file_summaries = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for upload in files:
+            content = await upload.read()
+            file_path = Path(tmpdir) / (upload.filename or "upload.py")
+            file_path.write_bytes(content)
+
+            result = scanner.scan_directory(file_path.parent)
+            findings = [f.as_dict() for f in result.findings]
+            all_findings.extend(findings)
+            file_summaries.append({
+                "filename": upload.filename,
+                "size": len(content),
+                "findings_count": len(findings),
+            })
+
+    return {
+        "total_findings": len(all_findings),
+        "files": file_summaries,
+        "findings": all_findings,
+    }
 
 
 def _job_to_read(job: TrainingJob, queue_position: Optional[int] = None) -> TrainingJobRead:
