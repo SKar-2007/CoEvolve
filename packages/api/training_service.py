@@ -14,6 +14,11 @@ from .config import Settings
 from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
 
+def _provider_key(settings: Settings, provider: str):
+    """Return the API key for a given provider name."""
+    return getattr(settings, f"{provider}_api_key", "") or ""
+
+
 def resolve_llm_provider(settings: Settings):
     """Pick best available LLM provider. Returns (provider, api_key, model)."""
     # Respect explicit LLM_PROVIDER setting first
