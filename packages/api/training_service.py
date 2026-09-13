@@ -16,6 +16,12 @@ from .models import EloRecord, EpisodeRecord, PromptRecord, RuleRecord
 
 def resolve_llm_provider(settings: Settings):
     """Pick best available LLM provider. Returns (provider, api_key, model)."""
+    # Respect explicit LLM_PROVIDER setting first
+    provider = settings.llm_provider.lower()
+    key = _provider_key(settings, provider)
+    if key:
+        return provider, key, settings.llm_model
+    # Fallback: auto-detect from available keys
     if settings.groq_api_key:
         return "groq", settings.groq_api_key, settings.llm_model
     if settings.anthropic_api_key:
