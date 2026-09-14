@@ -14,7 +14,7 @@ docker==7.1.*
 anthropic==0.34.*
 openai==1.30.*
 semgrep==1.86.*
-prometheus-client==0.20.*
+prometheus-client==0.26.*
 sentence-transformers==3.0.*
 python-dotenv==1.0.*
 google-genai==0.3.*
