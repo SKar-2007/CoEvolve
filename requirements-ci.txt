@@ -1,5 +1,5 @@
 # CI dependencies — pinned for reproducible builds (compatible-release pins).
-fastapi==0.111.*
+fastapi>=0.111,<0.142
 uvicorn==0.30.*
 pytest==8.2.*
 pytest-asyncio==0.23.*
