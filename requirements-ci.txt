@@ -11,7 +11,7 @@ sqlalchemy==2.0.*
 psycopg2-binary==2.9.*
 redis==5.0.*
 docker==7.1.*
-anthropic==0.34.*
+anthropic==1.5.*
 openai==1.30.*
 semgrep==1.86.*
 prometheus-client==0.20.*
