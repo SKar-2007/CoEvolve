@@ -9,7 +9,7 @@ pydantic==2.7.*
 pydantic-settings==2.2.*
 sqlalchemy==2.0.*
 psycopg2-binary==2.9.*
-redis==5.0.*
+redis==8.1.*
 docker==7.1.*
 anthropic==0.34.*
 openai==1.30.*
