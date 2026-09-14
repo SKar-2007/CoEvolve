@@ -17,7 +17,7 @@ semgrep==1.86.*
 prometheus-client==0.20.*
 sentence-transformers==3.0.*
 python-dotenv==1.0.*
-google-genai==0.3.*
+google-genai==2.23.*
 ruff==0.5.*
 mypy==1.10.*
 detect-secrets==1.5.*
